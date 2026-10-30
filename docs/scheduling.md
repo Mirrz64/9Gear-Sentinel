@@ -42,7 +42,7 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      - run: pip install "ninegear-sentinel[postgres]"
+      - run: pip install "9gear-sentinel[postgres]"
       - run: sentinel run --no-store
         env:
           WAREHOUSE_URL: ${{ secrets.WAREHOUSE_URL }}

@@ -3,7 +3,7 @@ requires = ["hatchling>=1.24"]
 build-backend = "hatchling.build"
 
 [project]
-name = "ninegear-sentinel"
+name = "9gear-sentinel"
 dynamic = ["version"]
 description = "Data quality checks for your warehouse, declared in YAML, run anywhere."
 readme = "README.md"

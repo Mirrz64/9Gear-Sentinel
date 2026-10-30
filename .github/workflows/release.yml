@@ -35,7 +35,7 @@ jobs:
     runs-on: ubuntu-latest
     environment:
       name: pypi
-      url: https://pypi.org/p/ninegear-sentinel
+      url: https://pypi.org/p/9gear-sentinel
     permissions:
       id-token: write  # trusted publishing: no API token stored anywhere
     steps:

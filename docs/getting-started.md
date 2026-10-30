@@ -7,7 +7,7 @@ This takes about ten minutes, from install to your first alert.
 Sentinel needs Python 3.11 or newer.
 
 ```bash
-pip install "ninegear-sentinel[postgres]"
+pip install "9gear-sentinel[postgres]"
 sentinel --version
 ```
 

@@ -1,8 +1,8 @@
 # 9Gear Sentinel
 
 [![CI](https://github.com/Mirrz64/9Gear-Sentinel/actions/workflows/ci.yml/badge.svg)](https://github.com/Mirrz64/9Gear-Sentinel/actions/workflows/ci.yml)
-[![PyPI](https://img.shields.io/pypi/v/ninegear-sentinel)](https://pypi.org/project/ninegear-sentinel/)
-[![Python](https://img.shields.io/pypi/pyversions/ninegear-sentinel)](https://pypi.org/project/ninegear-sentinel/)
+[![PyPI](https://img.shields.io/pypi/v/9gear-sentinel)](https://pypi.org/project/9gear-sentinel/)
+[![Python](https://img.shields.io/pypi/pyversions/9gear-sentinel)](https://pypi.org/project/9gear-sentinel/)
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue)](LICENSE)
 
 **Data quality checks for your warehouse, declared in YAML and run anywhere you can run a command.**
@@ -22,7 +22,7 @@ Sentinel catches stale tables, sudden row-count drops, null spikes, duplicate ke
 ## Quickstart
 
 ```bash
-pip install "ninegear-sentinel[postgres]"
+pip install "9gear-sentinel[postgres]"
 sentinel init                 # writes sentinel.yml and .env.example
 cp .env.example .env          # set WAREHOUSE_URL
 sentinel test-connection

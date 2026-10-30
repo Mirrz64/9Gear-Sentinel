@@ -5,7 +5,7 @@ Data quality checks for your warehouse, declared in YAML and run anywhere you ca
 Sentinel catches stale tables, sudden row-count drops, null spikes, duplicate keys and silent schema changes before your stakeholders do. Every check runs as SQL inside your own database, so your data never leaves it.
 
 ```bash
-pip install "ninegear-sentinel[postgres]"
+pip install "9gear-sentinel[postgres]"
 sentinel init
 sentinel run
 ```
