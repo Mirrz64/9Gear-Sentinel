@@ -1,39 +1,33 @@
 # 9Gear Sentinel
 
-Data quality checks for your warehouse, declared in YAML and run anywhere you can run a command.
+[![CI](https://github.com/Mirrz64/9Gear-Sentinel/actions/workflows/ci.yml/badge.svg)](https://github.com/Mirrz64/9Gear-Sentinel/actions/workflows/ci.yml)
+[![PyPI](https://img.shields.io/pypi/v/ninegear-sentinel)](https://pypi.org/project/ninegear-sentinel/)
+[![Python](https://img.shields.io/pypi/pyversions/ninegear-sentinel)](https://pypi.org/project/ninegear-sentinel/)
+[![License](https://img.shields.io/badge/license-Apache--2.0-blue)](LICENSE)
 
-Sentinel catches stale tables, sudden row-count drops, null spikes and silent schema changes before your stakeholders do. Checks run as SQL inside your own warehouse, so your data never leaves it.
+**Data quality checks for your warehouse, declared in YAML and run anywhere you can run a command.**
 
-> Status: early development. v0.1 is in progress.
+Sentinel catches stale tables, sudden row-count drops, null spikes, duplicate keys and silent schema changes before your stakeholders do. Every check runs as SQL inside your own database, so your data never leaves it.
 
-## Try it in two minutes
+![Sentinel running against a demo database](https://raw.githubusercontent.com/Mirrz64/9Gear-Sentinel/main/docs/assets/demo.gif)
 
-You need Docker and Python 3.11+.
+## Why Sentinel
 
-```bash
-git clone https://github.com/Mirrz64/9Gear-Sentinel.git
-cd 9Gear-Sentinel
-pip install -e ".[postgres]"
-docker compose up -d
-sentinel run -c examples/sentinel.yml
-```
+- **Ten minutes to the first alert.** `pip install`, one YAML file, done. No server, no UI to host.
+- **Alerts that don't nag.** Slack or email once when a check breaks and once when it recovers, not every hour while it stays broken.
+- **It remembers.** Every run is stored, so checks can catch a 40% overnight drop in rows, and you can see each check's recent trend.
+- **Fits your pipeline.** Clear exit codes for CI and Airflow, a built-in scheduler, and a shareable HTML report.
+- **Plain SQL you can read.** `--dry-run` shows exactly what will be sent to your database.
 
-The demo database has a healthy `customers` table and an `orders` table with deliberate problems, so you'll see passes, a warning and failures.
-
-## Use it on your own warehouse
+## Quickstart
 
 ```bash
 pip install "ninegear-sentinel[postgres]"
-sentinel init
-cp .env.example .env        # then set WAREHOUSE_URL
+sentinel init                 # writes sentinel.yml and .env.example
+cp .env.example .env          # set WAREHOUSE_URL
 sentinel test-connection
 sentinel run
-sentinel history
 ```
-
-Every run is saved to a local results store (`.sentinel/results.db` by default), so `sentinel history` shows how a table's checks have changed over time. Use `--no-store` to skip saving.
-
-## Checks
 
 ```yaml
 tables:
@@ -41,94 +35,56 @@ tables:
     table: analytics.orders
     checks:
       - freshness: { column: updated_at, max_age: 6h }
-      - row_count: { min: 1 }
-      - null_rate: { column: customer_id, max_pct: 1, severity: warn }
-      - not_null: { column: order_id }
-      - unique: { columns: [order_id] }
       - row_count_change: { max_drop_pct: 30 }
+      - unique: { columns: [order_id] }
+      - null_rate: { column: customer_id, max_pct: 1, severity: warn }
       - accepted_values:
           column: status
           values: [pending, paid, shipped, refunded]
-      - custom_sql:
-          name: orders_without_customers
-          sql: >
-            select o.order_id from analytics.orders o
-            left join analytics.customers c on c.id = o.customer_id
-            where c.id is null
+      - schema_drift: {}
 ```
+
+Want to see it first? The repo includes a demo database with deliberate problems:
+
+```bash
+git clone https://github.com/Mirrz64/9Gear-Sentinel.git && cd 9Gear-Sentinel
+pip install -e ".[postgres]"
+docker compose up -d
+sentinel run -c examples/sentinel.yml
+```
+
+## Checks
 
 | Check | Fails when |
 | --- | --- |
 | `freshness` | The newest timestamp is older than `max_age` |
 | `row_count` | The row count is outside `min` / `max` |
-| `row_count_change` | The count moved more than allowed since the last stored run |
+| `row_count_change` | The count moved more than allowed since the last run |
 | `not_null` | Any null appears in the column |
-| `null_rate` | The share of nulls exceeds `max_pct` |
+| `null_rate` | The share of nulls is above `max_pct` |
 | `unique` | Any key value appears more than once |
 | `accepted_values` | A value outside the list appears |
+| `schema_drift` | A column is added, removed or retyped since the baseline |
 | `custom_sql` | Your query returns any rows |
-| `schema_drift` | A column is added, removed or changes type since the baseline |
 
-Every check also accepts `severity` (`warn` or `error`), `where` (a SQL filter) and `tags`.
+## Reports
 
-## Schema drift
+`sentinel report` turns the latest run into one self-contained HTML page, with failures first and each check's recent history.
 
-The first run records each table's columns as a baseline. After that, any added, removed or retyped column fails the check until you accept the change:
+![HTML report](https://raw.githubusercontent.com/Mirrz64/9Gear-Sentinel/main/docs/assets/report.png)
 
-```bash
-sentinel snapshot-schema            # accept the current schema as the new baseline
-```
+## Documentation
 
-## Alerts
+Full docs: **[mirrz64.github.io/9Gear-Sentinel](https://mirrz64.github.io/9Gear-Sentinel/)**, covering configuration, every check, alerts, scheduling, CI recipes and the CLI.
 
-Sentinel alerts on changes of state: once when a check starts failing and once when it recovers, never on every run while something stays broken.
+## Supported databases
 
-```yaml
-alerts:
-  notify_on: [fail, error, recovered]   # also: warn
-  slack:
-    webhook_url: ${SLACK_WEBHOOK_URL}
-  email:
-    smtp_host: smtp.example.com
-    smtp_port: 587
-    username: ${SMTP_USER}
-    password: ${SMTP_PASSWORD}
-    to: [data-team@example.com]
-```
+Postgres and SQLite are supported and tested. Snowflake and BigQuery are planned for v0.2.
 
-Check the setup with `sentinel test-alert`. Use `sentinel run --no-alerts` to run quietly.
+## Contributing
 
-## Scheduling and reports
-
-```bash
-sentinel watch                       # run on schedule.cron (local time) until Ctrl+C
-sentinel watch --cron "*/15 * * * *" # or give the schedule on the command line
-sentinel report --out report.html    # the latest run as a shareable HTML page
-sentinel run --dry-run               # print the SQL each check would run
-```
-
-`watch` re-reads the config before every run, so edits apply without a restart. For production, cron, GitHub Actions or Airflow calling `sentinel run` works just as well.
-
-## Exit codes
-
-`sentinel run` exits 0 when everything passed or only warned, 1 when an error-severity check failed, and 2 when a check couldn't run (bad config, unreachable database, missing column). Use it to fail a CI job or an Airflow task.
-
-## Development
-
-```bash
-uv venv
-source .venv/Scripts/activate     # Windows Git Bash; use .venv/bin/activate on macOS/Linux
-uv pip install -e ".[dev]"
-pytest
-```
-
-Postgres integration tests run when `SENTINEL_TEST_PG_URL` is set:
-
-```bash
-docker compose up -d
-SENTINEL_TEST_PG_URL=postgresql+psycopg://sentinel:sentinel@localhost:5433/analytics pytest
-```
+Issues and pull requests are welcome. See [CONTRIBUTING.md](CONTRIBUTING.md) for setup.
 
 ## Licence
 
-Apache-2.0
+[Apache-2.0](LICENSE). Built by Miracle Osabuogbe at 9Gear Tech.

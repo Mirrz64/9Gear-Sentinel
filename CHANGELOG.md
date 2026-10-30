@@ -1,36 +1,28 @@
 # Changelog
 
-## Unreleased
+All notable changes to this project are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/), and versions follow [Semantic Versioning](https://semver.org/).
 
-### Week 5
-- `sentinel watch` with a built-in cron scheduler (no extra dependencies)
-- `sentinel report` writes the latest run as a self-contained HTML page with recent-run trends
-- `sentinel run --dry-run` prints the SQL each check would run
-- Ages show the largest unit and the next (`19h`, `3d 18h`); history rows stay on one line
+## [0.1.0] - 2026-11-XX
 
-### Week 4
-- `schema_drift` check with stored baselines, and `sentinel snapshot-schema` to accept changes
-- Slack (incoming webhook) and SMTP email alerts, using only the standard library
-- Alerts fire on change of state: once on failure, once on recovery
-- `sentinel test-alert` and `sentinel run --no-alerts`
+First public release.
 
-### Week 3
-- Results store: every run saved to SQLite (or Postgres) with each check's outcome and measured value
-- `sentinel history` with `--table`, `--check` and `--limit`, and `sentinel run --no-store`
-- Checks: `row_count_change`, `accepted_values`, `custom_sql`
-- Stable check keys, so changing a threshold keeps a check's history
-- Cleaner output: ages rounded to two units, percentages without trailing zeros, thousands separators
+### Checks
+- `freshness`, `row_count`, `row_count_change`, `not_null`, `null_rate`, `unique`, `accepted_values`, `schema_drift` and `custom_sql`
+- Common options on every check: `severity`, `where`, `tags` and `name`
 
-### Week 2
-- `sentinel run` with a results table, filters (`--source`, `--table`, `--check`, `--tag`) and exit codes
-- `sentinel test-connection`
-- Checks: `freshness`, `row_count`, `not_null`, `null_rate`, `unique`
-- Postgres and SQLite connectors built on SQLAlchemy
-- Docker Compose demo database with seeded problems
-- Postgres integration tests in CI
+### Commands
+- `init`, `validate`, `test-connection`, `run`, `history`, `report`, `snapshot-schema`, `test-alert` and `watch`
+- `run` filters (`--source`, `--table`, `--check`, `--tag`), `--dry-run`, `--no-store` and `--no-alerts`
+- Exit codes: 0 passed or warned, 1 failed, 2 couldn't run
 
-### Week 1
-- Config models for sources, store, alerts, schedule, tables and 9 check types
-- YAML loader with ${VAR} and ${VAR:-default} substitution and .env support
+### Configuration
+- One YAML file with `${VAR}` and `${VAR:-default}` substitution and `.env` support
 - Validation errors that name the file, line and field
-- `sentinel init`, `sentinel validate` and `sentinel --version`
+
+### Results and alerts
+- Results store in SQLite or Postgres, with stable check keys so thresholds can change without losing history
+- Slack and email alerts that fire on change of state: once on failure, once on recovery
+- Self-contained HTML report with each check's recent trend
+
+### Databases
+- Postgres and SQLite supported and tested

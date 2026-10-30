@@ -16,8 +16,14 @@ classifiers = [
     "Environment :: Console",
     "Intended Audience :: Developers",
     "License :: OSI Approved :: Apache Software License",
+    "Operating System :: OS Independent",
     "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
     "Topic :: Database",
+    "Topic :: Software Development :: Quality Assurance",
 ]
 dependencies = [
     "typer>=0.12",
@@ -30,6 +36,7 @@ dependencies = [
 
 [project.optional-dependencies]
 postgres = ["psycopg[binary]>=3.1"]
+docs = ["mkdocs-material>=9.5"]
 dev = [
     "pytest>=8",
     "pytest-cov>=5",
@@ -39,7 +46,11 @@ dev = [
 ]
 
 [project.urls]
+Homepage = "https://github.com/Mirrz64/9Gear-Sentinel"
+Documentation = "https://mirrz64.github.io/9Gear-Sentinel/"
 Repository = "https://github.com/Mirrz64/9Gear-Sentinel"
+Issues = "https://github.com/Mirrz64/9Gear-Sentinel/issues"
+Changelog = "https://github.com/Mirrz64/9Gear-Sentinel/blob/main/CHANGELOG.md"
 
 [project.scripts]
 sentinel = "sentinel.cli:app"
