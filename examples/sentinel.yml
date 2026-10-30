@@ -1,0 +1,25 @@
+# 9Gear Sentinel configuration
+# Secrets come from environment variables or a .env file next to this one.
+
+version: 1
+
+sources:
+  warehouse:
+    type: postgres
+    url: ${WAREHOUSE_URL}
+
+store:
+  url: sqlite:///.sentinel/results.db
+
+alerts:
+  notify_on: [fail, error]
+  # slack:
+  #   webhook_url: ${SLACK_WEBHOOK_URL}
+
+tables:
+  - source: warehouse
+    table: public.orders
+    checks:
+      - freshness: { column: updated_at, max_age: 6h }
+      - row_count: { min: 1 }
+      - unique: { columns: [id] }
