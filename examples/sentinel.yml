@@ -11,6 +11,12 @@ sources:
 store:
   url: sqlite:///.sentinel/results.db
 
+alerts:
+  notify_on: [fail, error, recovered]
+  # Uncomment and set SLACK_WEBHOOK_URL in .env to get alerts in Slack:
+  # slack:
+  #   webhook_url: ${SLACK_WEBHOOK_URL}
+
 tables:
   - source: demo
     table: analytics.orders
@@ -31,6 +37,7 @@ tables:
             from analytics.orders o
             left join analytics.customers c on c.id = o.customer_id
             where o.customer_id is not null and c.id is null
+      - schema_drift: {}
 
   - source: demo
     table: analytics.customers

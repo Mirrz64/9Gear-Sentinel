@@ -104,3 +104,33 @@ def test_missing_table_is_an_error(pg: Engine, tmp_path: Path) -> None:
     assert report.results[0].status == "ERROR"
     assert "missing" in report.results[0].message
     assert report.exit_code == 2
+
+
+def test_schema_drift_against_postgres(pg: Engine, tmp_path: Path) -> None:
+    from sentinel.store import ResultStore
+
+    config_path = tmp_path / "sentinel.yml"
+    config_path.write_text(
+        f"version: 1\nsources:\n  pg:\n    type: postgres\n    url: {PG_URL}\n"
+        "tables:\n  - source: pg\n    table: sentinel_it.orders\n"
+        "    checks:\n      - schema_drift: {}\n",
+        encoding="utf-8",
+    )
+    config = load_config(config_path, environ={})
+    store = ResultStore.open(f"sqlite:///{(tmp_path / 'results.db').as_posix()}")
+    try:
+        first = run_checks(config, schema_baseline=store.latest_snapshot)
+        store.save(first)
+        assert first.results[0].status == "PASS"
+
+        with pg.begin() as conn:
+            conn.execute(text("ALTER TABLE sentinel_it.orders ADD COLUMN discount numeric(5, 2)"))
+        try:
+            second = run_checks(config, schema_baseline=store.latest_snapshot)
+            assert second.results[0].status == "FAIL"
+            assert "added discount" in second.results[0].message
+        finally:
+            with pg.begin() as conn:
+                conn.execute(text("ALTER TABLE sentinel_it.orders DROP COLUMN discount"))
+    finally:
+        store.close()

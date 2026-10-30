@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+### Week 4
+- `schema_drift` check with stored baselines, and `sentinel snapshot-schema` to accept changes
+- Slack (incoming webhook) and SMTP email alerts, using only the standard library
+- Alerts fire on change of state: once on failure, once on recovery
+- `sentinel test-alert` and `sentinel run --no-alerts`
+
 ### Week 3
 - Results store: every run saved to SQLite (or Postgres) with each check's outcome and measured value
 - `sentinel history` with `--table`, `--check` and `--limit`, and `sentinel run --no-store`

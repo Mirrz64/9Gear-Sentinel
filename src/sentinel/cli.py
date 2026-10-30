@@ -13,6 +13,9 @@ from rich.text import Text
 from sqlalchemy.exc import SQLAlchemyError
 
 from sentinel import __version__
+from sentinel.alerts import compute_events, send_alerts, send_test_alert
+from sentinel.alerts.dispatch import channels
+from sentinel.checks.schema_drift import read_columns
 from sentinel.config import ConfigError, SentinelConfig, load_config
 from sentinel.connectors import ConnectorError, check_connection, create_source_engine, short_error
 from sentinel.runner import RunReport, Selection, run_checks
@@ -186,6 +189,7 @@ def run(
     no_store: Annotated[
         bool, typer.Option("--no-store", help="Don't save results to the results store.")
     ] = False,
+    no_alerts: Annotated[bool, typer.Option("--no-alerts", help="Don't send alerts.")] = False,
 ) -> None:
     """Run checks, print the results and exit 0 (ok), 1 (failures) or 2 (setup problem)."""
     cfg = _load_or_exit(config)
@@ -204,11 +208,18 @@ def run(
             _warn(f"{exc}; results won't be saved")
 
     try:
-        report = run_checks(cfg, selection, previous=store.last_observed if store else None)
+        report = run_checks(
+            cfg,
+            selection,
+            previous=store.last_observed if store else None,
+            schema_baseline=store.latest_snapshot if store else None,
+        )
         if not report.results:
             err_console.print("no checks matched the filters", markup=False, style="yellow")
             raise typer.Exit(EXIT_CONFIG_PROBLEM)
         _print_report(report)
+        if not no_alerts:
+            _alert(cfg, report, store)
         if store:
             try:
                 store.save(report)
@@ -245,6 +256,117 @@ def history(
         console.print("no results yet; run `sentinel run` first", markup=False, style="yellow")
         return
     _print_history(rows)
+
+
+@app.command("snapshot-schema")
+def snapshot_schema(
+    config: ConfigOption = Path("sentinel.yml"),
+    table: Annotated[
+        list[str] | None, typer.Option("--table", "-t", help="Only this table.")
+    ] = None,
+) -> None:
+    """Save each table's current columns as the schema_drift baseline.
+
+    Run it to set a baseline, or after an intended schema change to accept it.
+    """
+    cfg = _load_or_exit(config)
+    if table:
+        targets = [spec for spec in cfg.tables if spec.table in table]
+    else:
+        targets = [
+            spec for spec in cfg.tables if any(c.type == "schema_drift" for c in spec.checks)
+        ]
+    if not targets:
+        err_console.print(
+            "no tables to snapshot: add a schema_drift check or pass --table",
+            markup=False,
+            style="yellow",
+        )
+        raise typer.Exit(EXIT_CONFIG_PROBLEM)
+
+    try:
+        store = ResultStore.open(cfg.store.url)
+    except StoreError as exc:
+        err_console.print(str(exc), markup=False, style="red")
+        raise typer.Exit(EXIT_CONFIG_PROBLEM) from None
+
+    failed = 0
+    try:
+        for spec in targets:
+            try:
+                engine = create_source_engine(spec.source, cfg.sources[spec.source])
+                try:
+                    with engine.connect() as conn:
+                        columns = read_columns(conn, spec.table)
+                finally:
+                    engine.dispose()
+                if not columns:
+                    raise ConnectorError(f"table {spec.table} has no columns or was not found")
+                store.save_snapshot(spec.source, spec.table, columns)
+            except (ConnectorError, SQLAlchemyError) as exc:
+                failed += 1
+                message = str(exc) if isinstance(exc, ConnectorError) else short_error(exc)
+                err_console.print(
+                    f"FAIL  {spec.table}: {message}", markup=False, highlight=False, style="red"
+                )
+            else:
+                console.print(
+                    f"OK    {spec.table} ({len(columns)} columns)",
+                    markup=False,
+                    highlight=False,
+                    style="green",
+                )
+    finally:
+        store.close()
+
+    if failed:
+        raise typer.Exit(EXIT_CONFIG_PROBLEM)
+
+
+@app.command("test-alert")
+def test_alert(config: ConfigOption = Path("sentinel.yml")) -> None:
+    """Send a test message to every configured alert channel."""
+    cfg = _load_or_exit(config)
+    names = channels(cfg.alerts)
+    if not names:
+        err_console.print(
+            "no alert channels configured (add alerts.slack or alerts.email)",
+            markup=False,
+            style="yellow",
+        )
+        raise typer.Exit(EXIT_CONFIG_PROBLEM)
+
+    failures = send_test_alert(cfg.alerts)
+    for failure in failures:
+        err_console.print(f"FAIL  {failure}", markup=False, highlight=False, style="red")
+    if failures:
+        raise typer.Exit(EXIT_CONFIG_PROBLEM)
+    console.print(
+        f"test alert sent via {' and '.join(names)}", markup=False, highlight=False, style="green"
+    )
+
+
+def _alert(cfg: SentinelConfig, report: RunReport, store: ResultStore | None) -> None:
+    """Send alerts for state changes since the last stored run."""
+    if not channels(cfg.alerts):
+        return
+
+    def previous_status(key: str) -> str | None:
+        if store is None:
+            return None
+        try:
+            return store.last_status(key)
+        except SQLAlchemyError:
+            return None
+
+    events = compute_events(report.results, previous_status, cfg.alerts.notify_on)
+    if not events:
+        return
+    failures = send_alerts(cfg.alerts, events)
+    for failure in failures:
+        _warn(failure)
+    if not failures:
+        console.print(f"alerts: {len(events)} sent", markup=False, highlight=False, style="dim")
 
 
 def _warn(message: str) -> None:

@@ -2,17 +2,19 @@
 
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import UTC, datetime
 from pathlib import Path
 
 from sqlalchemy import Engine, create_engine, make_url, select
 from sqlalchemy.exc import ArgumentError, SQLAlchemyError
 
 from sentinel import __version__
+from sentinel.checks.schema_drift import Columns
 from sentinel.connectors import short_error
 from sentinel.runner import RunReport, status_for
-from sentinel.store.tables import check_results, metadata, runs
+from sentinel.store.tables import check_results, metadata, runs, schema_snapshots
 
 
 class StoreError(Exception):
@@ -97,6 +99,58 @@ class ResultStore:
                         for result in report.results
                     ],
                 )
+            seen: set[tuple[str, str]] = set()
+            for snapshot in report.new_snapshots:
+                if (snapshot.source, snapshot.table) in seen:
+                    continue
+                seen.add((snapshot.source, snapshot.table))
+                conn.execute(
+                    schema_snapshots.insert().values(
+                        source=snapshot.source,
+                        table_name=snapshot.table,
+                        columns=json.dumps([list(col) for col in snapshot.columns]),
+                        captured_at=report.started_at,
+                    )
+                )
+
+    def save_snapshot(self, source: str, table: str, columns: Columns) -> None:
+        """Store a table's current columns as the new schema_drift baseline."""
+        with self.engine.begin() as conn:
+            conn.execute(
+                schema_snapshots.insert().values(
+                    source=source,
+                    table_name=table,
+                    columns=json.dumps([list(col) for col in columns]),
+                    captured_at=datetime.now(UTC),
+                )
+            )
+
+    def latest_snapshot(self, source: str, table: str) -> Columns | None:
+        c = schema_snapshots.c
+        query = (
+            select(c["columns"])
+            .where(c.source == source, c.table_name == table)
+            .order_by(c.captured_at.desc(), c.id.desc())
+            .limit(1)
+        )
+        with self.engine.connect() as conn:
+            raw = conn.execute(query).scalar()
+        if raw is None:
+            return None
+        return tuple((str(name), str(kind)) for name, kind in json.loads(raw))
+
+    def last_status(self, key: str) -> str | None:
+        """Status (PASS, FAIL, WARN, ERROR) of a check's most recent stored run."""
+        c = check_results.c
+        query = (
+            select(c.outcome, c.severity)
+            .where(c.check_key == key, c.outcome != "skipped")
+            .order_by(c.checked_at.desc(), c.id.desc())
+            .limit(1)
+        )
+        with self.engine.connect() as conn:
+            row = conn.execute(query).first()
+        return status_for(row.outcome, row.severity) if row is not None else None
 
     def last_observed(self, key: str) -> float | None:
         """The most recent measured value for a check that ran (passed or failed)."""

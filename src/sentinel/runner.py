@@ -12,8 +12,9 @@ from datetime import UTC, datetime
 from typing import Any, Literal
 
 from sqlalchemy import Engine
-from sqlalchemy.exc import SQLAlchemyError
+from sqlalchemy.exc import NoSuchTableError, SQLAlchemyError
 
+from sentinel.checks import schema_drift
 from sentinel.checks.base import EvalContext
 from sentinel.checks.registry import get_impl
 from sentinel.config.models import SentinelConfig, TableSpec
@@ -21,6 +22,7 @@ from sentinel.connectors import ConnectorError, create_source_engine, short_erro
 
 Outcome = Literal["pass", "fail", "error", "skipped"]
 PreviousLookup = Callable[[str], float | None]
+SchemaLookup = Callable[[str, str], schema_drift.Columns | None]
 
 EXIT_OK = 0
 EXIT_CHECK_FAILED = 1
@@ -64,12 +66,21 @@ class CheckResult:
         return status_for(self.outcome, self.severity)
 
 
+@dataclass(frozen=True)
+class SchemaSnapshot:
+    source: str
+    table: str
+    columns: schema_drift.Columns
+
+
 @dataclass
 class RunReport:
     started_at: datetime
     run_id: str = field(default_factory=lambda: uuid.uuid4().hex)
     finished_at: datetime | None = None
     results: list[CheckResult] = field(default_factory=list)
+    # First-time schema baselines found during the run, for the store to save.
+    new_snapshots: list[SchemaSnapshot] = field(default_factory=list)
 
     def count(self, status: str) -> int:
         return sum(1 for result in self.results if result.status == status)
@@ -148,11 +159,13 @@ def run_checks(
     selection: Selection | None = None,
     now: datetime | None = None,
     previous: PreviousLookup | None = None,
+    schema_baseline: SchemaLookup | None = None,
 ) -> RunReport:
     """Run every selected check.
 
-    ``previous`` looks up a check's last stored observed value by check key; the
-    results store provides it. Without it, history-based checks act as a first run.
+    ``previous`` looks up a check's last stored observed value by check key, and
+    ``schema_baseline`` a table's stored column list; the results store provides
+    both. Without them, history-based checks behave as on a first run.
     """
     selection = selection or Selection()
     now = now or datetime.now(UTC)
@@ -172,8 +185,13 @@ def run_checks(
                 engines[table.source] = engine
 
             for check in table.checks:
-                if selection.wants_check(table, check):
-                    report.results.append(_run_one(table, check, engine, now, previous))
+                if not selection.wants_check(table, check):
+                    continue
+                if check.type == "schema_drift":
+                    result = _run_schema_drift(table, check, engine, schema_baseline, report)
+                else:
+                    result = _run_one(table, check, engine, now, previous)
+                report.results.append(result)
     finally:
         for engine in engines.values():
             if isinstance(engine, Engine):
@@ -183,6 +201,28 @@ def run_checks(
     return report
 
 
+def _make_result(
+    table: TableSpec,
+    check: Any,
+    outcome: Outcome,
+    observed: float | None,
+    message: str,
+    ms: int,
+) -> CheckResult:
+    return CheckResult(
+        source=table.source,
+        table=table.table,
+        check_type=check.type,
+        check_key=check_key(table.source, table.table, check),
+        label=describe(check),
+        severity=check.severity,
+        outcome=outcome,
+        observed=observed,
+        message=message,
+        duration_ms=ms,
+    )
+
+
 def _run_one(
     table: TableSpec,
     check: Any,
@@ -190,29 +230,14 @@ def _run_one(
     now: datetime,
     previous: PreviousLookup | None,
 ) -> CheckResult:
-    key = check_key(table.source, table.table, check)
-
-    def result(outcome: Outcome, observed: float | None, message: str, ms: int) -> CheckResult:
-        return CheckResult(
-            source=table.source,
-            table=table.table,
-            check_type=check.type,
-            check_key=key,
-            label=describe(check),
-            severity=check.severity,
-            outcome=outcome,
-            observed=observed,
-            message=message,
-            duration_ms=ms,
-        )
-
     if isinstance(engine, ConnectorError):
-        return result("error", None, str(engine), 0)
+        return _make_result(table, check, "error", None, str(engine), 0)
 
     impl = get_impl(check.type)
     if impl is None:
-        return result("skipped", None, "not implemented yet", 0)
+        return _make_result(table, check, "skipped", None, "not implemented yet", 0)
 
+    key = check_key(table.source, table.table, check)
     ctx = EvalContext(now=now, previous=_lookup(previous, key) if impl.uses_previous else None)
     started = time.perf_counter()
     try:
@@ -220,12 +245,47 @@ def _run_one(
             row = conn.execute(impl.build(check, table_target(table.table))).one()
         evaluation = impl.evaluate(check, row, ctx)
     except SQLAlchemyError as exc:
-        return result("error", None, short_error(exc), _elapsed_ms(started))
+        return _make_result(table, check, "error", None, short_error(exc), _elapsed_ms(started))
     except (TypeError, ValueError) as exc:
-        return result("error", None, str(exc), _elapsed_ms(started))
+        return _make_result(table, check, "error", None, str(exc), _elapsed_ms(started))
 
     outcome: Outcome = "pass" if evaluation.passed else "fail"
-    return result(outcome, evaluation.observed, evaluation.message, _elapsed_ms(started))
+    return _make_result(
+        table, check, outcome, evaluation.observed, evaluation.message, _elapsed_ms(started)
+    )
+
+
+def _run_schema_drift(
+    table: TableSpec,
+    check: Any,
+    engine: Engine | ConnectorError,
+    schema_baseline: SchemaLookup | None,
+    report: RunReport,
+) -> CheckResult:
+    if isinstance(engine, ConnectorError):
+        return _make_result(table, check, "error", None, str(engine), 0)
+
+    started = time.perf_counter()
+    try:
+        with engine.connect() as conn:
+            current = schema_drift.read_columns(conn, table.table)
+        baseline = schema_baseline(table.source, table.table) if schema_baseline else None
+    except NoSuchTableError:
+        message = f"table {table.table} not found"
+        return _make_result(table, check, "error", None, message, _elapsed_ms(started))
+    except SQLAlchemyError as exc:
+        return _make_result(table, check, "error", None, short_error(exc), _elapsed_ms(started))
+
+    if not current:
+        message = f"table {table.table} not found or has no columns"
+        return _make_result(table, check, "error", None, message, _elapsed_ms(started))
+    if baseline is None:
+        report.new_snapshots.append(SchemaSnapshot(table.source, table.table, current))
+    evaluation = schema_drift.evaluate(check, current, baseline)
+    outcome: Outcome = "pass" if evaluation.passed else "fail"
+    return _make_result(
+        table, check, outcome, evaluation.observed, evaluation.message, _elapsed_ms(started)
+    )
 
 
 def _lookup(previous: PreviousLookup | None, key: str) -> float | None:

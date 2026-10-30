@@ -67,8 +67,36 @@ tables:
 | `unique` | Any key value appears more than once |
 | `accepted_values` | A value outside the list appears |
 | `custom_sql` | Your query returns any rows |
+| `schema_drift` | A column is added, removed or changes type since the baseline |
 
 Every check also accepts `severity` (`warn` or `error`), `where` (a SQL filter) and `tags`.
+
+## Schema drift
+
+The first run records each table's columns as a baseline. After that, any added, removed or retyped column fails the check until you accept the change:
+
+```bash
+sentinel snapshot-schema            # accept the current schema as the new baseline
+```
+
+## Alerts
+
+Sentinel alerts on changes of state: once when a check starts failing and once when it recovers, never on every run while something stays broken.
+
+```yaml
+alerts:
+  notify_on: [fail, error, recovered]   # also: warn
+  slack:
+    webhook_url: ${SLACK_WEBHOOK_URL}
+  email:
+    smtp_host: smtp.example.com
+    smtp_port: 587
+    username: ${SMTP_USER}
+    password: ${SMTP_PASSWORD}
+    to: [data-team@example.com]
+```
+
+Check the setup with `sentinel test-alert`. Use `sentinel run --no-alerts` to run quietly.
 
 ## Exit codes
 
