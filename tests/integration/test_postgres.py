@@ -68,6 +68,10 @@ tables:
       - not_null: {{ column: customer_id }}
       - unique: {{ columns: [order_id] }}
       - unique: {{ columns: [order_id, customer_id], name: composite_key }}
+      - accepted_values: {{ column: order_id, values: [1, 2, 3] }}
+      - custom_sql:
+          name: null_customers
+          sql: select * from sentinel_it.orders where customer_id is null
 """,
         encoding="utf-8",
     )
@@ -82,6 +86,8 @@ tables:
         "not_null(customer_id)": "FAIL",
         "unique(order_id)": "FAIL",
         "composite_key": "FAIL",
+        "accepted_values(order_id)": "FAIL",
+        "null_customers": "FAIL",
     }
     assert report.exit_code == 1
 

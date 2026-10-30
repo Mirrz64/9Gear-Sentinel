@@ -40,7 +40,7 @@ def test_full_run_against_sqlite(make_config: MakeConfig) -> None:
         "orders:null_rate(customer_id)": "WARN",
         "orders:not_null(customer_id)": "FAIL",
         "orders:unique(order_id)": "FAIL",
-        "orders:accepted_values(order_id)": "SKIP",
+        "orders:accepted_values(order_id)": "FAIL",
         "customers:freshness(created_at)": "PASS",
         "customers:row_count": "PASS",
         "customers:not_null(email)": "PASS",
@@ -108,3 +108,46 @@ def test_selection_filters(make_config: MakeConfig) -> None:
         "customers:unique(id)",
     }
     assert len(statuses(config, Selection(tags=["core"]))) == 6
+
+
+def test_custom_sql(make_config: MakeConfig) -> None:
+    config = make_config(
+        "  - source: local\n    table: orders\n    checks:\n"
+        "      - custom_sql:\n"
+        "          name: null_customers\n"
+        "          sql: select * from orders where customer_id is null;\n"
+        "      - custom_sql:\n"
+        "          name: negative_ids\n"
+        "          sql: select * from orders where order_id < 0\n"
+    )
+    results = run_checks(config, now=NOW).results
+    assert [(r.label, r.status, r.observed) for r in results] == [
+        ("null_customers", "FAIL", 10),
+        ("negative_ids", "PASS", 0),
+    ]
+
+
+def test_row_count_change_uses_previous_lookup(make_config: MakeConfig) -> None:
+    config = make_config(
+        "  - source: local\n    table: orders\n    checks:\n"
+        "      - row_count_change: { max_drop_pct: 10 }\n"
+    )
+    first = run_checks(config, now=NOW).results[0]
+    assert first.status == "PASS" and "baseline" in first.message
+
+    baseline = {first.check_key: 200.0}
+    second = run_checks(config, now=NOW, previous=baseline.get).results[0]
+    assert second.status == "FAIL"
+    assert "dropped 49%" in second.message
+
+
+def test_check_key_ignores_thresholds_but_not_columns() -> None:
+    from sentinel.config.models import NullRateCheck
+    from sentinel.runner import check_key
+
+    loose = NullRateCheck(type="null_rate", column="a", max_pct=5)
+    strict = NullRateCheck(type="null_rate", column="a", max_pct=1, severity="warn")
+    other = NullRateCheck(type="null_rate", column="b", max_pct=5)
+    assert check_key("src", "t", loose) == check_key("src", "t", strict)
+    assert check_key("src", "t", loose) != check_key("src", "t", other)
+    assert check_key("src", "t", loose) != check_key("src", "t2", loose)

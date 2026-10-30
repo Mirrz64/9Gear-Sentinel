@@ -1,12 +1,11 @@
 from __future__ import annotations
 
-from datetime import datetime
 from typing import Any
 
 from sqlalchemy import ColumnClause, case, column, func, select
 from sqlalchemy.sql.expression import Executable, TableClause
 
-from sentinel.checks.base import CheckImpl, Evaluation, apply_where, plural
+from sentinel.checks.base import CheckImpl, EvalContext, Evaluation, apply_where, fmt_number, plural
 from sentinel.config.models import NotNullCheck, NullRateCheck
 
 
@@ -16,7 +15,7 @@ def build_not_null(spec: NotNullCheck, target: TableClause) -> Executable:
     return apply_where(query, spec)
 
 
-def evaluate_not_null(spec: NotNullCheck, row: Any, now: datetime) -> Evaluation:
+def evaluate_not_null(spec: NotNullCheck, row: Any, ctx: EvalContext) -> Evaluation:
     nulls = int(row[0] or 0)
     if nulls:
         return Evaluation(False, nulls, f"{plural(nulls, 'null')} in {spec.column}")
@@ -32,13 +31,16 @@ def build_null_rate(spec: NullRateCheck, target: TableClause) -> Executable:
     return apply_where(query, spec)
 
 
-def evaluate_null_rate(spec: NullRateCheck, row: Any, now: datetime) -> Evaluation:
+def evaluate_null_rate(spec: NullRateCheck, row: Any, ctx: EvalContext) -> Evaluation:
     total = int(row[0] or 0)
     nulls = int(row[1] or 0)
     if total == 0:
         return Evaluation(True, 0.0, "table is empty; nothing to measure")
     pct = round(nulls / total * 100, 2)
-    message = f"{pct}% null in {spec.column} ({nulls} of {total}), limit {spec.max_pct}%"
+    message = (
+        f"{fmt_number(pct)}% null in {spec.column} ({nulls:,} of {total:,}), "
+        f"limit {fmt_number(spec.max_pct)}%"
+    )
     return Evaluation(pct <= spec.max_pct, pct, message)
 
 

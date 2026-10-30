@@ -1,4 +1,4 @@
-"""Shared types for check implementations."""
+"""Shared types and helpers for check implementations."""
 
 from __future__ import annotations
 
@@ -22,15 +22,24 @@ class Evaluation:
 
 
 @dataclass(frozen=True)
+class EvalContext:
+    """What a check may need beyond its own query result."""
+
+    now: datetime
+    previous: float | None = None  # last stored observed value for this check, if any
+
+
+@dataclass(frozen=True)
 class CheckImpl:
     """How to query and judge one check type.
 
-    build() returns a query whose first row holds everything evaluate() needs,
+    build() returns a query whose single row holds everything evaluate() needs,
     so evaluate() can be unit-tested without a database.
     """
 
     build: Callable[[Any, TableClause], Executable]
-    evaluate: Callable[[Any, Any, datetime], Evaluation]
+    evaluate: Callable[[Any, Any, EvalContext], Evaluation]
+    uses_previous: bool = False
 
 
 def apply_where(query: SelectT, spec: Any) -> SelectT:
@@ -43,4 +52,9 @@ def not_null_all(columns: Sequence[ColumnElement[Any]]) -> list[ColumnElement[bo
 
 
 def plural(count: int, word: str) -> str:
-    return f"{count} {word}" if count == 1 else f"{count} {word}s"
+    return f"{count:,} {word}" if count == 1 else f"{count:,} {word}s"
+
+
+def fmt_number(value: float) -> str:
+    """2.49 -> '2.49', 1.0 -> '1', 12.5 -> '12.5'."""
+    return f"{value:.2f}".rstrip("0").rstrip(".") or "0"

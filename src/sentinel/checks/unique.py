@@ -1,12 +1,18 @@
 from __future__ import annotations
 
-from datetime import datetime
 from typing import Any
 
 from sqlalchemy import ColumnClause, column, func, select
 from sqlalchemy.sql.expression import Executable, TableClause
 
-from sentinel.checks.base import CheckImpl, Evaluation, apply_where, not_null_all, plural
+from sentinel.checks.base import (
+    CheckImpl,
+    EvalContext,
+    Evaluation,
+    apply_where,
+    not_null_all,
+    plural,
+)
 from sentinel.config.models import UniqueCheck
 
 
@@ -22,7 +28,7 @@ def build(spec: UniqueCheck, target: TableClause) -> Executable:
     return select(func.count()).select_from(duplicates.subquery())
 
 
-def evaluate(spec: UniqueCheck, row: Any, now: datetime) -> Evaluation:
+def evaluate(spec: UniqueCheck, row: Any, ctx: EvalContext) -> Evaluation:
     duplicates = int(row[0] or 0)
     key = ", ".join(spec.columns)
     if duplicates:

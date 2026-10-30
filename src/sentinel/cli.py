@@ -16,6 +16,7 @@ from sentinel import __version__
 from sentinel.config import ConfigError, SentinelConfig, load_config
 from sentinel.connectors import ConnectorError, check_connection, create_source_engine, short_error
 from sentinel.runner import RunReport, Selection, run_checks
+from sentinel.store import HistoryRow, ResultStore, StoreError
 
 app = typer.Typer(
     help="Data quality checks for your warehouse, declared in YAML.",
@@ -182,6 +183,9 @@ def run(
     tag: Annotated[
         list[str] | None, typer.Option("--tag", help="Only tables or checks with this tag.")
     ] = None,
+    no_store: Annotated[
+        bool, typer.Option("--no-store", help="Don't save results to the results store.")
+    ] = False,
 ) -> None:
     """Run checks, print the results and exit 0 (ok), 1 (failures) or 2 (setup problem)."""
     cfg = _load_or_exit(config)
@@ -191,13 +195,78 @@ def run(
         check_types=check or (),
         tags=tag or (),
     )
-    report = run_checks(cfg, selection)
-    if not report.results:
-        err_console.print("no checks matched the filters", markup=False, style="yellow")
-        raise typer.Exit(EXIT_CONFIG_PROBLEM)
 
-    _print_report(report)
+    store: ResultStore | None = None
+    if not no_store:
+        try:
+            store = ResultStore.open(cfg.store.url)
+        except StoreError as exc:
+            _warn(f"{exc}; results won't be saved")
+
+    try:
+        report = run_checks(cfg, selection, previous=store.last_observed if store else None)
+        if not report.results:
+            err_console.print("no checks matched the filters", markup=False, style="yellow")
+            raise typer.Exit(EXIT_CONFIG_PROBLEM)
+        _print_report(report)
+        if store:
+            try:
+                store.save(report)
+            except SQLAlchemyError as exc:
+                _warn(f"could not save results: {short_error(exc)}")
+    finally:
+        if store:
+            store.close()
+
     raise typer.Exit(report.exit_code)
+
+
+@app.command()
+def history(
+    config: ConfigOption = Path("sentinel.yml"),
+    table: Annotated[str | None, typer.Option("--table", "-t", help="Only this table.")] = None,
+    check: Annotated[str | None, typer.Option("--check", help="Only this check type.")] = None,
+    limit: Annotated[int, typer.Option("--limit", "-n", min=1, help="How many rows.")] = 20,
+) -> None:
+    """Show recent check results from the results store, newest first."""
+    cfg = _load_or_exit(config, require_env=False)
+    try:
+        store = ResultStore.open(cfg.store.url)
+    except StoreError as exc:
+        err_console.print(str(exc), markup=False, style="red")
+        raise typer.Exit(EXIT_CONFIG_PROBLEM) from None
+
+    try:
+        rows = store.history(table=table, check_type=check, limit=limit)
+    finally:
+        store.close()
+
+    if not rows:
+        console.print("no results yet; run `sentinel run` first", markup=False, style="yellow")
+        return
+    _print_history(rows)
+
+
+def _warn(message: str) -> None:
+    err_console.print(f"warning: {message}", markup=False, highlight=False, style="yellow")
+
+
+def _print_history(rows: list[HistoryRow]) -> None:
+    grid = Table(show_header=True, header_style="bold", box=None, pad_edge=False)
+    grid.add_column("When (UTC)")
+    grid.add_column("Status")
+    grid.add_column("Table")
+    grid.add_column("Check")
+    grid.add_column("Result", ratio=1)
+    for row in rows:
+        grid.add_row(
+            Text(row.checked_at.strftime("%Y-%m-%d %H:%M")),
+            Text(row.status, style=STATUS_STYLES.get(row.status, "")),
+            Text(row.table_name),
+            Text(row.label),
+            Text(row.message),
+        )
+    console.print(grid)
 
 
 def _print_report(report: RunReport) -> None:
@@ -205,7 +274,7 @@ def _print_report(report: RunReport) -> None:
     grid.add_column("Status")
     grid.add_column("Table")
     grid.add_column("Check")
-    grid.add_column("Result")
+    grid.add_column("Result", ratio=1)
     grid.add_column("Time", justify="right")
 
     for result in report.results:

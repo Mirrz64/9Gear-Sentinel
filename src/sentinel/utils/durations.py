@@ -1,11 +1,11 @@
-"""Parse human-friendly durations such as "30m", "6h", "1d" or "1h30m"."""
+"""Parse and format human-friendly durations such as "30m", "6h", "1d" or "1h30m"."""
 
 from __future__ import annotations
 
 import re
 from datetime import timedelta
 
-_UNIT_SECONDS = {"s": 1, "m": 60, "h": 3600, "d": 86400, "w": 604800}
+_UNIT_SECONDS = {"w": 604800, "d": 86400, "h": 3600, "m": 60, "s": 1}
 _PART = re.compile(r"(\d+)([smhdw])")
 
 
@@ -41,15 +41,21 @@ def parse_duration(value: object) -> timedelta:
     return timedelta(seconds=seconds)
 
 
-def format_duration(delta: timedelta) -> str:
-    """Render a timedelta compactly, e.g. 5400 seconds -> '1h30m'."""
+def _parts(delta: timedelta) -> list[str]:
     remaining = int(delta.total_seconds())
-    if remaining <= 0:
-        return "0s"
     parts = []
-    for unit in ("w", "d", "h", "m", "s"):
-        size = _UNIT_SECONDS[unit]
+    for unit, size in _UNIT_SECONDS.items():
         count, remaining = divmod(remaining, size)
         if count:
             parts.append(f"{count}{unit}")
-    return "".join(parts)
+    return parts
+
+
+def format_duration(delta: timedelta) -> str:
+    """Exact and compact, e.g. 5400 seconds -> '1h30m'. Used for configured limits."""
+    return "".join(_parts(delta)) or "0s"
+
+
+def format_age(delta: timedelta) -> str:
+    """Rounded to the two largest units, e.g. '3d 1m' or '2h 5m'. Used for measured ages."""
+    return " ".join(_parts(delta)[:2]) or "0s"

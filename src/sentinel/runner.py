@@ -2,8 +2,11 @@
 
 from __future__ import annotations
 
+import hashlib
+import json
 import time
-from collections.abc import Sequence
+import uuid
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import Any, Literal
@@ -11,15 +14,36 @@ from typing import Any, Literal
 from sqlalchemy import Engine
 from sqlalchemy.exc import SQLAlchemyError
 
+from sentinel.checks.base import EvalContext
 from sentinel.checks.registry import get_impl
 from sentinel.config.models import SentinelConfig, TableSpec
 from sentinel.connectors import ConnectorError, create_source_engine, short_error, table_target
 
 Outcome = Literal["pass", "fail", "error", "skipped"]
+PreviousLookup = Callable[[str], float | None]
 
 EXIT_OK = 0
 EXIT_CHECK_FAILED = 1
 EXIT_SETUP_PROBLEM = 2
+
+# Fields that define *what* a check measures. Thresholds are left out on purpose,
+# so tightening a limit keeps the check's history and baseline.
+_IDENTITY_FIELDS = ("type", "column", "columns", "where", "name", "sql")
+
+
+def status_for(outcome: str, severity: str) -> str:
+    """What a person sees: PASS, FAIL, WARN, ERROR or SKIP."""
+    if outcome == "fail":
+        return "WARN" if severity == "warn" else "FAIL"
+    return {"pass": "PASS", "error": "ERROR", "skipped": "SKIP"}.get(outcome, outcome.upper())
+
+
+def check_key(source: str, table: str, check: Any) -> str:
+    """Stable id for a check across runs, used to find its previous results."""
+    identity = {name: getattr(check, name, None) for name in _IDENTITY_FIELDS}
+    identity = {name: value for name, value in identity.items() if value is not None}
+    payload = json.dumps({"source": source, "table": table, **identity}, sort_keys=True)
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()[:16]
 
 
 @dataclass(frozen=True)
@@ -27,6 +51,7 @@ class CheckResult:
     source: str
     table: str
     check_type: str
+    check_key: str
     label: str
     severity: str
     outcome: Outcome
@@ -36,15 +61,13 @@ class CheckResult:
 
     @property
     def status(self) -> str:
-        """What a person sees: PASS, FAIL, WARN, ERROR or SKIP."""
-        if self.outcome == "fail":
-            return "WARN" if self.severity == "warn" else "FAIL"
-        return {"pass": "PASS", "error": "ERROR", "skipped": "SKIP"}[self.outcome]
+        return status_for(self.outcome, self.severity)
 
 
 @dataclass
 class RunReport:
     started_at: datetime
+    run_id: str = field(default_factory=lambda: uuid.uuid4().hex)
     finished_at: datetime | None = None
     results: list[CheckResult] = field(default_factory=list)
 
@@ -60,8 +83,19 @@ class RunReport:
             return EXIT_CHECK_FAILED
         return EXIT_OK
 
+    @property
+    def status(self) -> str:
+        if self.count("ERROR"):
+            return "errored"
+        if self.count("FAIL"):
+            return "failed"
+        if self.count("WARN"):
+            return "warned"
+        return "passed"
+
     def summary(self) -> str:
-        parts = [f"{len(self.results)} checks"]
+        total = len(self.results)
+        parts = [f"{total} check{'s' if total != 1 else ''}"]
         for status, word in (
             ("PASS", "passed"),
             ("FAIL", "failed"),
@@ -113,7 +147,13 @@ def run_checks(
     config: SentinelConfig,
     selection: Selection | None = None,
     now: datetime | None = None,
+    previous: PreviousLookup | None = None,
 ) -> RunReport:
+    """Run every selected check.
+
+    ``previous`` looks up a check's last stored observed value by check key; the
+    results store provides it. Without it, history-based checks act as a first run.
+    """
     selection = selection or Selection()
     now = now or datetime.now(UTC)
     report = RunReport(started_at=datetime.now(UTC))
@@ -133,7 +173,7 @@ def run_checks(
 
             for check in table.checks:
                 if selection.wants_check(table, check):
-                    report.results.append(_run_one(table, check, engine, now))
+                    report.results.append(_run_one(table, check, engine, now, previous))
     finally:
         for engine in engines.values():
             if isinstance(engine, Engine):
@@ -144,13 +184,20 @@ def run_checks(
 
 
 def _run_one(
-    table: TableSpec, check: Any, engine: Engine | ConnectorError, now: datetime
+    table: TableSpec,
+    check: Any,
+    engine: Engine | ConnectorError,
+    now: datetime,
+    previous: PreviousLookup | None,
 ) -> CheckResult:
+    key = check_key(table.source, table.table, check)
+
     def result(outcome: Outcome, observed: float | None, message: str, ms: int) -> CheckResult:
         return CheckResult(
             source=table.source,
             table=table.table,
             check_type=check.type,
+            check_key=key,
             label=describe(check),
             severity=check.severity,
             outcome=outcome,
@@ -166,11 +213,12 @@ def _run_one(
     if impl is None:
         return result("skipped", None, "not implemented yet", 0)
 
+    ctx = EvalContext(now=now, previous=_lookup(previous, key) if impl.uses_previous else None)
     started = time.perf_counter()
     try:
         with engine.connect() as conn:
             row = conn.execute(impl.build(check, table_target(table.table))).one()
-        evaluation = impl.evaluate(check, row, now)
+        evaluation = impl.evaluate(check, row, ctx)
     except SQLAlchemyError as exc:
         return result("error", None, short_error(exc), _elapsed_ms(started))
     except (TypeError, ValueError) as exc:
@@ -178,6 +226,15 @@ def _run_one(
 
     outcome: Outcome = "pass" if evaluation.passed else "fail"
     return result(outcome, evaluation.observed, evaluation.message, _elapsed_ms(started))
+
+
+def _lookup(previous: PreviousLookup | None, key: str) -> float | None:
+    if previous is None:
+        return None
+    try:
+        return previous(key)
+    except SQLAlchemyError:
+        return None
 
 
 def _elapsed_ms(started: float) -> int:

@@ -28,7 +28,10 @@ sentinel init
 cp .env.example .env        # then set WAREHOUSE_URL
 sentinel test-connection
 sentinel run
+sentinel history
 ```
+
+Every run is saved to a local results store (`.sentinel/results.db` by default), so `sentinel history` shows how a table's checks have changed over time. Use `--no-store` to skip saving.
 
 ## Checks
 
@@ -42,7 +45,28 @@ tables:
       - null_rate: { column: customer_id, max_pct: 1, severity: warn }
       - not_null: { column: order_id }
       - unique: { columns: [order_id] }
+      - row_count_change: { max_drop_pct: 30 }
+      - accepted_values:
+          column: status
+          values: [pending, paid, shipped, refunded]
+      - custom_sql:
+          name: orders_without_customers
+          sql: >
+            select o.order_id from analytics.orders o
+            left join analytics.customers c on c.id = o.customer_id
+            where c.id is null
 ```
+
+| Check | Fails when |
+| --- | --- |
+| `freshness` | The newest timestamp is older than `max_age` |
+| `row_count` | The row count is outside `min` / `max` |
+| `row_count_change` | The count moved more than allowed since the last stored run |
+| `not_null` | Any null appears in the column |
+| `null_rate` | The share of nulls exceeds `max_pct` |
+| `unique` | Any key value appears more than once |
+| `accepted_values` | A value outside the list appears |
+| `custom_sql` | Your query returns any rows |
 
 Every check also accepts `severity` (`warn` or `error`), `where` (a SQL filter) and `tags`.
 
