@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+### Week 5
+- `sentinel watch` with a built-in cron scheduler (no extra dependencies)
+- `sentinel report` writes the latest run as a self-contained HTML page with recent-run trends
+- `sentinel run --dry-run` prints the SQL each check would run
+- Ages show the largest unit and the next (`19h`, `3d 18h`); history rows stay on one line
+
 ### Week 4
 - `schema_drift` check with stored baselines, and `sentinel snapshot-schema` to accept changes
 - Slack (incoming webhook) and SMTP email alerts, using only the standard library

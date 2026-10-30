@@ -11,6 +11,9 @@ sources:
 store:
   url: sqlite:///.sentinel/results.db
 
+schedule:
+  cron: "0 * * * *"   # every hour, used by `sentinel watch`
+
 alerts:
   notify_on: [fail, error, recovered]
   # Uncomment and set SLACK_WEBHOOK_URL in .env to get alerts in Slack:

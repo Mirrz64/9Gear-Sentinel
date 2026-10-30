@@ -37,6 +37,17 @@ class HistoryRow:
         return status_for(self.outcome, self.severity)
 
 
+@dataclass(frozen=True)
+class StoredRun:
+    run_id: str
+    started_at: datetime
+    status: str
+    triggered_by: str
+    results: list[HistoryRow]
+    # check label -> statuses of its recent runs, oldest first (includes this run)
+    trends: dict[str, list[str]]
+
+
 class ResultStore:
     def __init__(self, engine: Engine) -> None:
         self.engine = engine
@@ -206,3 +217,64 @@ class ResultStore:
             )
             for row in rows
         ]
+
+    def latest_run(self, trend_length: int = 10) -> StoredRun | None:
+        """The newest stored run with its results and each check's recent trend."""
+        r, c = runs.c, check_results.c
+        with self.engine.connect() as conn:
+            run = conn.execute(
+                select(r.run_id, r.started_at, r.status, r.triggered_by)
+                .order_by(r.started_at.desc())
+                .limit(1)
+            ).first()
+            if run is None:
+                return None
+            rows = conn.execute(
+                select(
+                    c.checked_at,
+                    c.table_name,
+                    c.check_type,
+                    c.label,
+                    c.severity,
+                    c.outcome,
+                    c.observed,
+                    c.message,
+                    c.check_key,
+                )
+                .where(c.run_id == run.run_id)
+                .order_by(c.id)
+            ).all()
+
+            results: list[HistoryRow] = []
+            trends: dict[str, list[str]] = {}
+            for row in rows:
+                results.append(
+                    HistoryRow(
+                        checked_at=row.checked_at,
+                        table_name=row.table_name,
+                        check_type=row.check_type,
+                        label=row.label,
+                        severity=row.severity,
+                        outcome=row.outcome,
+                        observed=row.observed,
+                        message=row.message,
+                    )
+                )
+                recent = conn.execute(
+                    select(c.outcome, c.severity)
+                    .where(c.check_key == row.check_key, c.checked_at <= row.checked_at)
+                    .order_by(c.checked_at.desc(), c.id.desc())
+                    .limit(trend_length)
+                ).all()
+                trends[f"{row.table_name}:{row.label}"] = [
+                    status_for(item.outcome, item.severity) for item in reversed(recent)
+                ]
+
+        return StoredRun(
+            run_id=run.run_id,
+            started_at=run.started_at,
+            status=run.status,
+            triggered_by=run.triggered_by,
+            results=results,
+            trends=trends,
+        )

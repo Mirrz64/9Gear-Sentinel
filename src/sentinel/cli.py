@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import time
+from datetime import datetime
 from importlib.resources import files
 from pathlib import Path
 from typing import Annotated
@@ -18,7 +20,9 @@ from sentinel.alerts.dispatch import channels
 from sentinel.checks.schema_drift import read_columns
 from sentinel.config import ConfigError, SentinelConfig, load_config
 from sentinel.connectors import ConnectorError, check_connection, create_source_engine, short_error
-from sentinel.runner import RunReport, Selection, run_checks
+from sentinel.report import render_report
+from sentinel.runner import RunReport, Selection, preview_sql, run_checks
+from sentinel.scheduler import CronError, CronSchedule, watch_loop
 from sentinel.store import HistoryRow, ResultStore, StoreError
 
 app = typer.Typer(
@@ -190,9 +194,12 @@ def run(
         bool, typer.Option("--no-store", help="Don't save results to the results store.")
     ] = False,
     no_alerts: Annotated[bool, typer.Option("--no-alerts", help="Don't send alerts.")] = False,
+    dry_run: Annotated[
+        bool, typer.Option("--dry-run", help="Print the SQL each check would run, then stop.")
+    ] = False,
 ) -> None:
     """Run checks, print the results and exit 0 (ok), 1 (failures) or 2 (setup problem)."""
-    cfg = _load_or_exit(config)
+    cfg = _load_or_exit(config, require_env=not dry_run)
     selection = Selection(
         sources=source or (),
         tables=table or (),
@@ -200,6 +207,100 @@ def run(
         tags=tag or (),
     )
 
+    if dry_run:
+        previews = preview_sql(cfg, selection)
+        if not previews:
+            err_console.print("no checks matched the filters", markup=False, style="yellow")
+            raise typer.Exit(EXIT_CONFIG_PROBLEM)
+        for preview in previews:
+            console.print(f"-- {preview.table}  {preview.label}", style="dim", markup=False)
+            console.print(f"{preview.sql};\n", markup=False, highlight=False)
+        return
+
+    report = _execute(cfg, selection, no_store=no_store, no_alerts=no_alerts)
+    if report is None:
+        err_console.print("no checks matched the filters", markup=False, style="yellow")
+        raise typer.Exit(EXIT_CONFIG_PROBLEM)
+    raise typer.Exit(report.exit_code)
+
+
+@app.command()
+def watch(
+    config: ConfigOption = Path("sentinel.yml"),
+    cron: Annotated[
+        str | None,
+        typer.Option("--cron", help="Cron schedule, overriding schedule.cron in the config."),
+    ] = None,
+    no_store: Annotated[
+        bool, typer.Option("--no-store", help="Don't save results to the results store.")
+    ] = False,
+    no_alerts: Annotated[bool, typer.Option("--no-alerts", help="Don't send alerts.")] = False,
+    max_runs: Annotated[
+        int | None, typer.Option("--max-runs", min=1, help="Stop after this many runs.")
+    ] = None,
+) -> None:
+    """Run all checks on a cron schedule (local time) until stopped with Ctrl+C.
+
+    The config is re-read before every run, so edits apply without a restart.
+    """
+    cfg = _load_or_exit(config)
+    expression = cron or (cfg.schedule.cron if cfg.schedule else None)
+    if not expression:
+        err_console.print(
+            "no schedule: add schedule.cron to the config or pass --cron",
+            markup=False,
+            style="red",
+        )
+        raise typer.Exit(EXIT_CONFIG_PROBLEM)
+    try:
+        schedule = CronSchedule.parse(expression)
+    except CronError as exc:
+        err_console.print(str(exc), markup=False, style="red")
+        raise typer.Exit(EXIT_CONFIG_PROBLEM) from None
+
+    def run_once() -> None:
+        try:
+            current = load_config(config)
+        except ConfigError as exc:
+            for issue in exc.issues:
+                err_console.print(str(issue), markup=False, highlight=False, style="red")
+            _warn("config has problems; skipping this run")
+            return
+        try:
+            _execute(current, Selection(), no_store=no_store, no_alerts=no_alerts)
+        except Exception as exc:  # keep watching even if one run blows up
+            _warn(f"run failed: {exc}")
+
+    def on_wait(due: datetime) -> None:
+        console.print(
+            f"next run at {due:%Y-%m-%d %H:%M}", markup=False, highlight=False, style="dim"
+        )
+
+    console.print(
+        f"watching on '{expression}'. Press Ctrl+C to stop.", markup=False, highlight=False
+    )
+    try:
+        watch_loop(schedule, run_once, on_wait=on_wait, now=_now, sleep=_sleep, max_runs=max_runs)
+    except KeyboardInterrupt:
+        console.print("\nstopped", markup=False)
+
+
+def _now() -> datetime:
+    return datetime.now().astimezone()
+
+
+def _sleep(seconds: float) -> None:
+    time.sleep(seconds)
+
+
+def _execute(
+    cfg: SentinelConfig,
+    selection: Selection,
+    *,
+    no_store: bool,
+    no_alerts: bool,
+) -> RunReport | None:
+    """One full run: checks, printed results, alerts and storage. None if nothing matched."""
     store: ResultStore | None = None
     if not no_store:
         try:
@@ -215,8 +316,7 @@ def run(
             schema_baseline=store.latest_snapshot if store else None,
         )
         if not report.results:
-            err_console.print("no checks matched the filters", markup=False, style="yellow")
-            raise typer.Exit(EXIT_CONFIG_PROBLEM)
+            return None
         _print_report(report)
         if not no_alerts:
             _alert(cfg, report, store)
@@ -228,8 +328,37 @@ def run(
     finally:
         if store:
             store.close()
+    return report
 
-    raise typer.Exit(report.exit_code)
+
+@app.command("report")
+def report_command(
+    config: ConfigOption = Path("sentinel.yml"),
+    out: Annotated[Path, typer.Option("--out", "-o", help="Where to write the HTML file.")] = Path(
+        "sentinel-report.html"
+    ),
+) -> None:
+    """Write the latest stored run as a self-contained HTML report."""
+    cfg = _load_or_exit(config, require_env=False)
+    try:
+        store = ResultStore.open(cfg.store.url)
+    except StoreError as exc:
+        err_console.print(str(exc), markup=False, style="red")
+        raise typer.Exit(EXIT_CONFIG_PROBLEM) from None
+    try:
+        latest = store.latest_run()
+    finally:
+        store.close()
+
+    if latest is None:
+        err_console.print(
+            "no runs stored yet; run `sentinel run` first", markup=False, style="yellow"
+        )
+        raise typer.Exit(EXIT_CONFIG_PROBLEM)
+
+    out.parent.mkdir(parents=True, exist_ok=True)
+    out.write_text(render_report(latest), encoding="utf-8")
+    console.print(f"wrote {out}", markup=False, highlight=False, style="green")
 
 
 @app.command()
@@ -375,11 +504,11 @@ def _warn(message: str) -> None:
 
 def _print_history(rows: list[HistoryRow]) -> None:
     grid = Table(show_header=True, header_style="bold", box=None, pad_edge=False)
-    grid.add_column("When (UTC)")
+    grid.add_column("When (UTC)", no_wrap=True)
     grid.add_column("Status")
-    grid.add_column("Table")
-    grid.add_column("Check")
-    grid.add_column("Result", ratio=1)
+    grid.add_column("Table", no_wrap=True)
+    grid.add_column("Check", no_wrap=True)
+    grid.add_column("Result", ratio=1, no_wrap=True, overflow="ellipsis")
     for row in rows:
         grid.add_row(
             Text(row.checked_at.strftime("%Y-%m-%d %H:%M")),

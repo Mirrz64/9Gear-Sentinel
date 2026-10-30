@@ -41,21 +41,31 @@ def parse_duration(value: object) -> timedelta:
     return timedelta(seconds=seconds)
 
 
-def _parts(delta: timedelta) -> list[str]:
+def _counts(delta: timedelta) -> list[tuple[int, str]]:
     remaining = int(delta.total_seconds())
-    parts = []
+    counts = []
     for unit, size in _UNIT_SECONDS.items():
         count, remaining = divmod(remaining, size)
-        if count:
-            parts.append(f"{count}{unit}")
-    return parts
+        counts.append((count, unit))
+    return counts
 
 
 def format_duration(delta: timedelta) -> str:
     """Exact and compact, e.g. 5400 seconds -> '1h30m'. Used for configured limits."""
-    return "".join(_parts(delta)) or "0s"
+    return "".join(f"{count}{unit}" for count, unit in _counts(delta) if count) or "0s"
 
 
 def format_age(delta: timedelta) -> str:
-    """Rounded to the two largest units, e.g. '3d 1m' or '2h 5m'. Used for measured ages."""
-    return " ".join(_parts(delta)[:2]) or "0s"
+    """The largest unit plus the next one down, e.g. '3d 1h', '19h', '2h 5m'.
+
+    Used for measured ages, where seconds rarely matter once hours do.
+    """
+    counts = _counts(delta)
+    for index, (count, unit) in enumerate(counts):
+        if count:
+            text = f"{count}{unit}"
+            if index + 1 < len(counts) and counts[index + 1][0]:
+                following, following_unit = counts[index + 1]
+                text += f" {following}{following_unit}"
+            return text
+    return "0s"

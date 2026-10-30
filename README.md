@@ -98,6 +98,17 @@ alerts:
 
 Check the setup with `sentinel test-alert`. Use `sentinel run --no-alerts` to run quietly.
 
+## Scheduling and reports
+
+```bash
+sentinel watch                       # run on schedule.cron (local time) until Ctrl+C
+sentinel watch --cron "*/15 * * * *" # or give the schedule on the command line
+sentinel report --out report.html    # the latest run as a shareable HTML page
+sentinel run --dry-run               # print the SQL each check would run
+```
+
+`watch` re-reads the config before every run, so edits apply without a restart. For production, cron, GitHub Actions or Airflow calling `sentinel run` works just as well.
+
 ## Exit codes
 
 `sentinel run` exits 0 when everything passed or only warned, 1 when an error-severity check failed, and 2 when a check couldn't run (bad config, unreachable database, missing column). Use it to fail a CI job or an Airflow task.

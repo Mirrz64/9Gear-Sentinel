@@ -9,10 +9,11 @@ import uuid
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
-from typing import Any, Literal
+from typing import Any, Literal, cast
 
 from sqlalchemy import Engine
 from sqlalchemy.exc import NoSuchTableError, SQLAlchemyError
+from sqlalchemy.sql.expression import ClauseElement
 
 from sentinel.checks import schema_drift
 from sentinel.checks.base import EvalContext
@@ -199,6 +200,57 @@ def run_checks(
 
     report.finished_at = datetime.now(UTC)
     return report
+
+
+@dataclass(frozen=True)
+class SqlPreview:
+    table: str
+    label: str
+    sql: str
+
+
+def preview_sql(config: SentinelConfig, selection: Selection | None = None) -> list[SqlPreview]:
+    """The SQL each selected check would run, with values filled in. Nothing is executed."""
+    selection = selection or Selection()
+    previews: list[SqlPreview] = []
+    engines: dict[str, Engine | ConnectorError] = {}
+    try:
+        for table in config.tables:
+            if not selection.wants_table(table):
+                continue
+            if table.source not in engines:
+                try:
+                    engines[table.source] = create_source_engine(
+                        table.source, config.sources[table.source]
+                    )
+                except ConnectorError as exc:
+                    engines[table.source] = exc
+            engine = engines[table.source]
+
+            for check in table.checks:
+                if not selection.wants_check(table, check):
+                    continue
+                previews.append(
+                    SqlPreview(table.table, describe(check), _sql_for(table, check, engine))
+                )
+    finally:
+        for engine in engines.values():
+            if isinstance(engine, Engine):
+                engine.dispose()
+    return previews
+
+
+def _sql_for(table: TableSpec, check: Any, engine: Engine | ConnectorError) -> str:
+    if isinstance(engine, ConnectorError):
+        return f"-- cannot build SQL: {engine}"
+    if check.type == "schema_drift":
+        return "-- reads the table's column list from database metadata (no query)"
+    impl = get_impl(check.type)
+    if impl is None:
+        return "-- not implemented yet"
+    query = cast(ClauseElement, impl.build(check, table_target(table.table)))
+    compiled = query.compile(dialect=engine.dialect, compile_kwargs={"literal_binds": True})
+    return str(compiled).strip()
 
 
 def _make_result(

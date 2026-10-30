@@ -35,10 +35,13 @@ class TestFreshness:
         assert not result.passed
         assert "1d old (limit 6h)" in result.message
 
-    def test_age_is_rounded_to_two_units(self) -> None:
-        age = timedelta(days=3, minutes=1, seconds=4)
-        result = freshness.evaluate(fresh(), (NOW - age,), CTX)
-        assert "3d 1m old" in result.message
+    def test_age_shows_largest_unit_and_the_next(self) -> None:
+        age = timedelta(days=3, hours=18, minutes=5)
+        assert "3d 18h old" in freshness.evaluate(fresh(), (NOW - age,), CTX).message
+
+    def test_age_skips_small_leftovers(self) -> None:
+        age = timedelta(hours=19, seconds=55)
+        assert "19h old" in freshness.evaluate(fresh(), (NOW - age,), CTX).message
 
     def test_exactly_on_the_limit_passes(self) -> None:
         assert freshness.evaluate(fresh(), (NOW - timedelta(hours=6),), CTX).passed
