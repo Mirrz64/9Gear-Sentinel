@@ -8,9 +8,14 @@ from typing import Annotated
 
 import typer
 from rich.console import Console
+from rich.table import Table
+from rich.text import Text
+from sqlalchemy.exc import SQLAlchemyError
 
 from sentinel import __version__
-from sentinel.config import ConfigError, load_config
+from sentinel.config import ConfigError, SentinelConfig, load_config
+from sentinel.connectors import ConnectorError, check_connection, create_source_engine, short_error
+from sentinel.runner import RunReport, Selection, run_checks
 
 app = typer.Typer(
     help="Data quality checks for your warehouse, declared in YAML.",
@@ -24,6 +29,14 @@ EXIT_OK = 0
 EXIT_CHECK_FAILED = 1
 EXIT_CONFIG_PROBLEM = 2
 
+STATUS_STYLES = {
+    "PASS": "green",
+    "FAIL": "bold red",
+    "WARN": "yellow",
+    "ERROR": "bold magenta",
+    "SKIP": "dim",
+}
+
 ConfigOption = Annotated[
     Path,
     typer.Option("--config", "-c", help="Path to the config file."),
@@ -32,6 +45,19 @@ ConfigOption = Annotated[
 
 def _template(name: str) -> str:
     return files("sentinel").joinpath("templates", name).read_text(encoding="utf-8")
+
+
+def _load_or_exit(config: Path, *, require_env: bool = True) -> SentinelConfig:
+    try:
+        return load_config(config, require_env=require_env)
+    except ConfigError as exc:
+        count = len(exc.issues)
+        for issue in exc.issues:
+            err_console.print(str(issue), markup=False, highlight=False, style="red")
+        err_console.print(
+            f"\n{count} problem{'s' if count != 1 else ''} found", markup=False, style="bold red"
+        )
+        raise typer.Exit(EXIT_CONFIG_PROBLEM) from None
 
 
 def _version_callback(value: bool) -> None:
@@ -93,17 +119,7 @@ def validate(
     ] = False,
 ) -> None:
     """Check the config file without connecting to any database."""
-    try:
-        cfg = load_config(config, require_env=not skip_env)
-    except ConfigError as exc:
-        count = len(exc.issues)
-        for issue in exc.issues:
-            err_console.print(str(issue), markup=False, highlight=False, style="red")
-        err_console.print(
-            f"\n{count} problem{'s' if count != 1 else ''} found", markup=False, style="bold red"
-        )
-        raise typer.Exit(EXIT_CONFIG_PROBLEM) from None
-
+    cfg = _load_or_exit(config, require_env=not skip_env)
     console.print(
         f"{config} is valid: {len(cfg.sources)} source(s), "
         f"{len(cfg.tables)} table(s), {cfg.check_count()} check(s)",
@@ -111,6 +127,99 @@ def validate(
         highlight=False,
         style="green",
     )
+
+
+@app.command("test-connection")
+def test_connection(
+    config: ConfigOption = Path("sentinel.yml"),
+    source: Annotated[
+        list[str] | None, typer.Option("--source", "-s", help="Only test this source.")
+    ] = None,
+) -> None:
+    """Open each source and run SELECT 1."""
+    cfg = _load_or_exit(config)
+    names = source or list(cfg.sources)
+    unknown = [name for name in names if name not in cfg.sources]
+    if unknown:
+        err_console.print(f"unknown source(s): {', '.join(unknown)}", markup=False, style="red")
+        raise typer.Exit(EXIT_CONFIG_PROBLEM)
+
+    failed = 0
+    for name in names:
+        try:
+            engine = create_source_engine(name, cfg.sources[name])
+            try:
+                check_connection(engine)
+            finally:
+                engine.dispose()
+        except ConnectorError as exc:
+            failed += 1
+            err_console.print(f"FAIL  {exc}", markup=False, highlight=False, style="red")
+        except SQLAlchemyError as exc:
+            failed += 1
+            err_console.print(
+                f"FAIL  {name}: {short_error(exc)}", markup=False, highlight=False, style="red"
+            )
+        else:
+            console.print(f"OK    {name}", markup=False, highlight=False, style="green")
+
+    if failed:
+        raise typer.Exit(EXIT_CONFIG_PROBLEM)
+
+
+@app.command()
+def run(
+    config: ConfigOption = Path("sentinel.yml"),
+    source: Annotated[
+        list[str] | None, typer.Option("--source", "-s", help="Only this source.")
+    ] = None,
+    table: Annotated[
+        list[str] | None, typer.Option("--table", "-t", help="Only this table.")
+    ] = None,
+    check: Annotated[
+        list[str] | None, typer.Option("--check", help="Only this check type.")
+    ] = None,
+    tag: Annotated[
+        list[str] | None, typer.Option("--tag", help="Only tables or checks with this tag.")
+    ] = None,
+) -> None:
+    """Run checks, print the results and exit 0 (ok), 1 (failures) or 2 (setup problem)."""
+    cfg = _load_or_exit(config)
+    selection = Selection(
+        sources=source or (),
+        tables=table or (),
+        check_types=check or (),
+        tags=tag or (),
+    )
+    report = run_checks(cfg, selection)
+    if not report.results:
+        err_console.print("no checks matched the filters", markup=False, style="yellow")
+        raise typer.Exit(EXIT_CONFIG_PROBLEM)
+
+    _print_report(report)
+    raise typer.Exit(report.exit_code)
+
+
+def _print_report(report: RunReport) -> None:
+    grid = Table(show_header=True, header_style="bold", box=None, pad_edge=False)
+    grid.add_column("Status")
+    grid.add_column("Table")
+    grid.add_column("Check")
+    grid.add_column("Result")
+    grid.add_column("Time", justify="right")
+
+    for result in report.results:
+        grid.add_row(
+            Text(result.status, style=STATUS_STYLES[result.status]),
+            Text(result.table),
+            Text(result.label),
+            Text(result.message),
+            Text(f"{result.duration_ms} ms" if result.outcome != "skipped" else ""),
+        )
+
+    console.print(grid)
+    exit_style = {0: "green", 1: "bold red", 2: "bold magenta"}[report.exit_code]
+    console.print(f"\n{report.summary()}", markup=False, highlight=False, style=exit_style)
 
 
 if __name__ == "__main__":

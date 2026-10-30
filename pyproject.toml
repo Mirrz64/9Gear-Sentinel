@@ -25,11 +25,21 @@ dependencies = [
     "pydantic>=2.7",
     "ruamel.yaml>=0.18",
     "python-dotenv>=1.0",
+    "sqlalchemy>=2.0",
 ]
 
 [project.optional-dependencies]
-postgres = ["sqlalchemy>=2.0", "psycopg[binary]>=3.1"]
-dev = ["pytest>=8", "pytest-cov>=5", "ruff>=0.6", "mypy>=1.10"]
+postgres = ["psycopg[binary]>=3.1"]
+dev = [
+    "pytest>=8",
+    "pytest-cov>=5",
+    "ruff>=0.6",
+    "mypy>=1.10",
+    "psycopg[binary]>=3.1",
+]
+
+[project.urls]
+Repository = "https://github.com/Mirrz64/9Gear-Sentinel"
 
 [project.scripts]
 sentinel = "sentinel.cli:app"
@@ -43,6 +53,7 @@ packages = ["src/sentinel"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-q"
+markers = ["integration: needs a running Postgres (set SENTINEL_TEST_PG_URL)"]
 
 [tool.ruff]
 line-length = 100

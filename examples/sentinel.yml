@@ -1,25 +1,30 @@
-# 9Gear Sentinel configuration
-# Secrets come from environment variables or a .env file next to this one.
+# Demo config for the Postgres in docker-compose.yml.
+# docker compose up -d, then: sentinel run -c examples/sentinel.yml
 
 version: 1
 
 sources:
-  warehouse:
+  demo:
     type: postgres
-    url: ${WAREHOUSE_URL}
-
-store:
-  url: sqlite:///.sentinel/results.db
-
-alerts:
-  notify_on: [fail, error]
-  # slack:
-  #   webhook_url: ${SLACK_WEBHOOK_URL}
+    url: ${WAREHOUSE_URL:-postgresql+psycopg://sentinel:sentinel@localhost:5433/analytics}
 
 tables:
-  - source: warehouse
-    table: public.orders
+  - source: demo
+    table: analytics.orders
+    tags: [core]
     checks:
       - freshness: { column: updated_at, max_age: 6h }
       - row_count: { min: 1 }
+      - null_rate: { column: customer_id, max_pct: 1, severity: warn }
+      - unique: { columns: [order_id] }
+      - accepted_values:
+          column: status
+          values: [pending, paid, shipped, refunded]
+
+  - source: demo
+    table: analytics.customers
+    checks:
+      - freshness: { column: created_at, max_age: 7d }
+      - row_count: { min: 100 }
+      - not_null: { column: email }
       - unique: { columns: [id] }

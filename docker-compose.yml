@@ -1,0 +1,23 @@
+# Local Postgres with demo data for trying Sentinel and running integration tests.
+# Start:  docker compose up -d
+# Reset:  docker compose down -v && docker compose up -d
+services:
+  postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: sentinel
+      POSTGRES_PASSWORD: sentinel
+      POSTGRES_DB: analytics
+    ports:
+      - "5433:5432"
+    volumes:
+      - ./examples/seed.sql:/docker-entrypoint-initdb.d/01-seed.sql:ro
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U sentinel -d analytics"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+volumes:
+  pgdata:
