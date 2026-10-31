@@ -2,6 +2,21 @@
 
 All notable changes to this project are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/), and versions follow [Semantic Versioning](https://semver.org/).
 
+## [0.1.1] - 2026-10-31
+
+### Added
+- Failure messages show examples: `unique` lists the most repeated keys, `accepted_values` lists the unexpected values it found
+- 9Gear Sentinel logo in the README, docs site and HTML report
+
+### Changed
+- `sentinel validate` uses proper plurals ("1 source, 1 table, 3 checks")
+- `sentinel init` lists the next steps, including `sentinel test-connection`
+- The starter config says which names to change and links to the checks reference
+
+### Development
+- CI also runs on Windows and macOS
+- `.gitattributes` keeps line endings consistent across platforms
+
 ## [0.1.0] - 2026-10-30
 
 First public release.

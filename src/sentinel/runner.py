@@ -16,7 +16,7 @@ from sqlalchemy.exc import NoSuchTableError, SQLAlchemyError
 from sqlalchemy.sql.expression import ClauseElement
 
 from sentinel.checks import schema_drift
-from sentinel.checks.base import EvalContext
+from sentinel.checks.base import CheckImpl, EvalContext
 from sentinel.checks.registry import get_impl
 from sentinel.config.models import SentinelConfig, TableSpec
 from sentinel.connectors import ConnectorError, create_source_engine, short_error, table_target
@@ -301,10 +301,31 @@ def _run_one(
     except (TypeError, ValueError) as exc:
         return _make_result(table, check, "error", None, str(exc), _elapsed_ms(started))
 
+    message = evaluation.message
+    if not evaluation.passed:
+        message = _with_examples(engine, impl, check, table, message)
+
     outcome: Outcome = "pass" if evaluation.passed else "fail"
-    return _make_result(
-        table, check, outcome, evaluation.observed, evaluation.message, _elapsed_ms(started)
-    )
+    return _make_result(table, check, outcome, evaluation.observed, message, _elapsed_ms(started))
+
+
+def _with_examples(
+    engine: Engine, impl: CheckImpl, check: Any, table: TableSpec, message: str
+) -> str:
+    """Add a few offending values to a failure message, when the check can find them.
+
+    Best effort: if the sample query fails, the original message stands.
+    """
+    if impl.sample is None or impl.describe_sample is None:
+        return message
+    try:
+        with engine.connect() as conn:
+            rows = conn.execute(impl.sample(check, table_target(table.table))).all()
+    except SQLAlchemyError:
+        return message
+    if not rows:
+        return message
+    return f"{message}; {impl.describe_sample(check, rows)}"
 
 
 def _run_schema_drift(

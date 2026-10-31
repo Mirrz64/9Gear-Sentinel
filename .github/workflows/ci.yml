@@ -7,6 +7,7 @@ on:
 
 jobs:
   test:
+    name: Linux, Python ${{ matrix.python-version }} (with Postgres)
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -42,3 +43,22 @@ jobs:
         run: mypy src
       - name: Test
         run: pytest --cov=sentinel --cov-report=term-missing
+
+  test-other-os:
+    # Service containers only run on Linux, so Postgres integration tests skip here.
+    name: ${{ matrix.os }}, Python 3.13
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, macos-latest]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - name: Install
+        run: uv pip install --system -e ".[dev]"
+      - name: Test
+        run: pytest

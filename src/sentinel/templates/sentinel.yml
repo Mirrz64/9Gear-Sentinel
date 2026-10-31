@@ -16,6 +16,8 @@ alerts:
   # slack:
   #   webhook_url: ${SLACK_WEBHOOK_URL}
 
+# Change the table and column names below to match your own data.
+# Every check type is described at https://mirrz64.github.io/9Gear-Sentinel/checks/
 tables:
   - source: warehouse
     table: public.orders

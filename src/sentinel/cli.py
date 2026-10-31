@@ -51,6 +51,10 @@ ConfigOption = Annotated[
 ]
 
 
+def _count(number: int, word: str) -> str:
+    return f"{number} {word}" if number == 1 else f"{number} {word}s"
+
+
 def _template(name: str) -> str:
     return files("sentinel").joinpath("templates", name).read_text(encoding="utf-8")
 
@@ -111,8 +115,12 @@ def init(
         console.print(f"created {path}", markup=False, highlight=False)
 
     console.print(
-        "\nNext: copy .env.example to .env, set WAREHOUSE_URL, "
-        "edit the checks, then run `sentinel validate`.",
+        "\nNext steps:\n"
+        "  1. copy .env.example to .env and set WAREHOUSE_URL\n"
+        "  2. point the checks in sentinel.yml at one of your tables\n"
+        "  3. sentinel validate\n"
+        "  4. sentinel test-connection\n"
+        "  5. sentinel run",
         markup=False,
         highlight=False,
     )
@@ -129,8 +137,8 @@ def validate(
     """Check the config file without connecting to any database."""
     cfg = _load_or_exit(config, require_env=not skip_env)
     console.print(
-        f"{config} is valid: {len(cfg.sources)} source(s), "
-        f"{len(cfg.tables)} table(s), {cfg.check_count()} check(s)",
+        f"{config} is valid: {_count(len(cfg.sources), 'source')}, "
+        f"{_count(len(cfg.tables), 'table')}, {_count(cfg.check_count(), 'check')}",
         markup=False,
         highlight=False,
         style="green",
@@ -505,10 +513,10 @@ def _warn(message: str) -> None:
 def _print_history(rows: list[HistoryRow]) -> None:
     grid = Table(show_header=True, header_style="bold", box=None, pad_edge=False)
     grid.add_column("When (UTC)", no_wrap=True)
-    grid.add_column("Status")
+    grid.add_column("Status", no_wrap=True)
     grid.add_column("Table", no_wrap=True)
     grid.add_column("Check", no_wrap=True)
-    grid.add_column("Result", ratio=1, no_wrap=True, overflow="ellipsis")
+    grid.add_column("Result", ratio=1)
     for row in rows:
         grid.add_row(
             Text(row.checked_at.strftime("%Y-%m-%d %H:%M")),

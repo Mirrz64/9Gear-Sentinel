@@ -40,6 +40,9 @@ class CheckImpl:
     build: Callable[[Any, TableClause], Executable]
     evaluate: Callable[[Any, Any, EvalContext], Evaluation]
     uses_previous: bool = False
+    # Optional: when the check fails, fetch a few offending values to show the user.
+    sample: Callable[[Any, TableClause], Executable] | None = None
+    describe_sample: Callable[[Any, Sequence[Any]], str] | None = None
 
 
 def apply_where(query: SelectT, spec: Any) -> SelectT:
@@ -49,6 +52,18 @@ def apply_where(query: SelectT, spec: Any) -> SelectT:
 
 def not_null_all(columns: Sequence[ColumnElement[Any]]) -> list[ColumnElement[bool]]:
     return [col.is_not(None) for col in columns]
+
+
+SAMPLE_SIZE = 5
+_MAX_VALUE_LENGTH = 40
+
+
+def show_value(value: object) -> str:
+    """How an example value appears in a message: strings quoted, long values cut."""
+    text = f"'{value}'" if isinstance(value, str) else str(value)
+    if len(text) > _MAX_VALUE_LENGTH:
+        text = text[: _MAX_VALUE_LENGTH - 1] + "…"
+    return text
 
 
 def plural(count: int, word: str) -> str:

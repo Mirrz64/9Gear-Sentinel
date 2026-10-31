@@ -53,7 +53,7 @@ Fails when the share of nulls in a column is above `max_pct` (0 to 100, default 
 
 ## unique
 
-Fails if any key value appears more than once. Rows where a key column is null are ignored; use `not_null` for those.
+Fails if any key value appears more than once. Rows where a key column is null are ignored; use `not_null` for those. A failure lists up to five of the most repeated keys, for example `3 duplicate keys in (order_id); e.g. 10, 20, 30`.
 
 ```yaml
 - unique: { columns: [order_id] }
@@ -62,7 +62,7 @@ Fails if any key value appears more than once. Rows where a key column is null a
 
 ## accepted_values
 
-Fails if any non-null value is outside the list.
+Fails if any non-null value is outside the list. A failure lists up to five of the most common unexpected values, for example `found 'cancelled', 'unknown'`.
 
 ```yaml
 - accepted_values:
