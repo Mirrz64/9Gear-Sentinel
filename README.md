@@ -1,9 +1,15 @@
-# 9Gear Sentinel
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/Mirrz64/9Gear-Sentinel/main/docs/assets/logo-dark.svg">
+    <img src="https://raw.githubusercontent.com/Mirrz64/9Gear-Sentinel/main/docs/assets/logo-light.svg" alt="9Gear Sentinel: detect, alert, protect" width="520">
+  </picture>
+</p>
 
 [![CI](https://github.com/Mirrz64/9Gear-Sentinel/actions/workflows/ci.yml/badge.svg)](https://github.com/Mirrz64/9Gear-Sentinel/actions/workflows/ci.yml)
 [![PyPI](https://img.shields.io/pypi/v/9gear-sentinel)](https://pypi.org/project/9gear-sentinel/)
 [![Python](https://img.shields.io/pypi/pyversions/9gear-sentinel)](https://pypi.org/project/9gear-sentinel/)
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue)](LICENSE)
+[![Docs](https://img.shields.io/badge/docs-mirrz64.github.io-1558D6)](https://mirrz64.github.io/9Gear-Sentinel/)
 
 **Data quality checks for your warehouse, declared in YAML and run anywhere you can run a command.**
 

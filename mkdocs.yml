@@ -7,18 +7,20 @@ edit_uri: edit/main/docs/
 
 theme:
   name: material
+  logo: assets/icon-dark.svg
+  favicon: assets/icon-light.svg
   palette:
     - media: "(prefers-color-scheme: light)"
       scheme: default
-      primary: indigo
-      accent: indigo
+      primary: custom
+      accent: custom
       toggle:
         icon: material/weather-night
         name: Switch to dark mode
     - media: "(prefers-color-scheme: dark)"
       scheme: slate
-      primary: indigo
-      accent: indigo
+      primary: custom
+      accent: custom
       toggle:
         icon: material/weather-sunny
         name: Switch to light mode
@@ -27,6 +29,9 @@ theme:
     - navigation.sections
     - navigation.top
     - search.highlight
+
+extra_css:
+  - stylesheets/extra.css
 
 markdown_extensions:
   - admonition

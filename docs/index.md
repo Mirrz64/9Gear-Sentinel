@@ -1,5 +1,8 @@
 # 9Gear Sentinel
 
+![9Gear Sentinel](assets/logo-light.svg#only-light){ .sentinel-hero }
+![9Gear Sentinel](assets/logo-dark.svg#only-dark){ .sentinel-hero }
+
 Data quality checks for your warehouse, declared in YAML and run anywhere you can run a command.
 
 Sentinel catches stale tables, sudden row-count drops, null spikes, duplicate keys and silent schema changes before your stakeholders do. Every check runs as SQL inside your own database, so your data never leaves it.

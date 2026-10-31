@@ -1,0 +1,26 @@
+/* 9Gear Sentinel brand colours */
+:root {
+  --md-primary-fg-color: #0b1636;
+  --md-primary-fg-color--light: #1a2a57;
+  --md-primary-fg-color--dark: #070e24;
+  --md-accent-fg-color: #ff7a00;
+}
+
+[data-md-color-scheme="slate"] {
+  --md-primary-fg-color: #0b1636;
+  --md-accent-fg-color: #ff8a1f;
+  --md-typeset-a-color: #4c8dff;
+}
+
+[data-md-color-scheme="default"] {
+  --md-typeset-a-color: #1558d6;
+}
+
+.md-header__button.md-logo img {
+  height: 1.8rem;
+}
+
+.sentinel-hero {
+  max-width: 560px;
+  margin: 0.5rem 0 1.5rem;
+}

@@ -2,13 +2,24 @@
 
 from __future__ import annotations
 
+import base64
 from collections import Counter
+from functools import cache
 from html import escape
+from importlib.resources import files
 
 from sentinel import __version__
 from sentinel.store import StoredRun
 
 _ORDER = ("FAIL", "ERROR", "WARN", "PASS", "SKIP")
+
+
+@cache
+def _icon(theme: str) -> str:
+    """The brand icon as a data URI, so the report stays a single file."""
+    svg = files("sentinel.report").joinpath("assets", f"icon-{theme}.svg").read_bytes()
+    return "data:image/svg+xml;base64," + base64.b64encode(svg).decode("ascii")
+
 
 _CSS = """
 :root {
@@ -29,7 +40,14 @@ body {
   font: 15px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
 }
 main { max-width: 1100px; margin: 0 auto; padding: 32px 20px 48px; }
-header h1 { margin: 0 0 4px; font-size: 24px; letter-spacing: -0.01em; }
+header { display: flex; align-items: center; gap: 14px; }
+header img { width: 52px; height: 52px; flex: none; }
+header img.dark { display: none; }
+@media (prefers-color-scheme: dark) {
+  header img.light { display: none; }
+  header img.dark { display: block; }
+}
+header h1 { margin: 0 0 2px; font-size: 24px; letter-spacing: -0.01em; }
 header p { margin: 0; color: var(--muted); }
 .summary { display: flex; flex-wrap: wrap; gap: 12px; margin: 24px 0; }
 .stat {
@@ -100,9 +118,13 @@ def render_report(run: StoredRun) -> str:
 <body>
 <main>
 <header>
+<img class="light" src="{_icon("light")}" alt="">
+<img class="dark" src="{_icon("dark")}" alt="">
+<div>
 <h1>Data quality report</h1>
 <p>Run at {escape(when)} &middot; {len(run.results)} checks
 &middot; status: {escape(run.status)}</p>
+</div>
 </header>
 <section class="summary">{stats}</section>
 <div class="table-wrap">
