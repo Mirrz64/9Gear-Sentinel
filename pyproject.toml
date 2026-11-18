@@ -46,12 +46,13 @@ dependencies = [
 [project.optional-dependencies]
 postgres = ["psycopg[binary]>=3.1"]
 mysql = ["pymysql>=1.1"]
-duckdb = ["duckdb>=1.0", "duckdb-engine>=0.13"]
+duckdb = ["duckdb>=1.0", "duckdb-engine>=0.13", "pytz"]
 all = [
     "psycopg[binary]>=3.1",
     "pymysql>=1.1",
     "duckdb>=1.0",
     "duckdb-engine>=0.13",
+    "pytz",
 ]
 docs = ["mkdocs-material>=9.5"]
 dev = [
@@ -63,6 +64,7 @@ dev = [
     "pymysql>=1.1",
     "duckdb>=1.0",
     "duckdb-engine>=0.13",
+    "pytz",
 ]
 
 [project.urls]
