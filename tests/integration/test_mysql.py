@@ -31,9 +31,9 @@ def mysql() -> Iterator[Engine]:
     engine = create_engine(MYSQL_URL)
     # DATETIME has no time zone; Sentinel reads it as UTC, so store UTC.
     updated = (datetime.now(UTC) - timedelta(days=2)).replace(tzinfo=None, microsecond=0)
-    rows = [
-        {"o": i, "c": None if i % 10 == 0 else i, "u": updated} for i in range(1, 101)
-    ] + [{"o": 1, "c": 1, "u": updated}]
+    rows = [{"o": i, "c": None if i % 10 == 0 else i, "u": updated} for i in range(1, 101)] + [
+        {"o": 1, "c": 1, "u": updated}
+    ]
     with engine.begin() as conn:
         conn.execute(text(f"DROP TABLE IF EXISTS {TABLE}"))
         conn.execute(

@@ -10,7 +10,7 @@ from __future__ import annotations
 from collections.abc import Collection
 from typing import Any
 
-from sqlalchemy import Connection, inspect
+from sqlalchemy import Connection, inspect, text
 
 from sentinel.checks.base import Evaluation, plural
 from sentinel.config.models import SchemaDriftCheck
@@ -22,8 +22,23 @@ _SHOW_CHANGES = 5
 
 def read_columns(conn: Connection, table_name: str) -> Columns:
     schema, _, name = table_name.rpartition(".")
+    if conn.dialect.name == "duckdb":
+        return _read_duckdb_columns(conn, schema, name)
     columns = inspect(conn).get_columns(name, schema=schema or None)
     return tuple((str(col["name"]), _type_name(col["type"], conn)) for col in columns)
+
+
+def _read_duckdb_columns(conn: Connection, schema: str, name: str) -> Columns:
+    """DuckDB's SQLAlchemy dialect reflects through Postgres catalog tables DuckDB lacks,
+    so read the column list from information_schema instead."""
+    where_schema = "table_schema = :schema" if schema else "table_schema = current_schema()"
+    query = text(
+        "SELECT column_name, data_type FROM information_schema.columns "
+        f"WHERE table_catalog = current_database() AND {where_schema} AND table_name = :name "
+        "ORDER BY ordinal_position"
+    )
+    params = {"schema": schema, "name": name} if schema else {"name": name}
+    return tuple((str(row[0]), str(row[1])) for row in conn.execute(query, params))
 
 
 def _type_name(column_type: Any, conn: Connection) -> str:
