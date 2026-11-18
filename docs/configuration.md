@@ -43,8 +43,27 @@ A map of names to connections. Tables refer to a source by name.
 
 | Field | Required | Notes |
 | --- | --- | --- |
-| `type` | yes | `postgres`, `sqlite`, `snowflake` or `bigquery` (see [supported databases](index.md#supported-databases)) |
-| `url` | yes | A SQLAlchemy URL. `postgresql://` URLs use the psycopg 3 driver automatically. |
+| `type` | yes | `postgres`, `mysql`, `duckdb`, `sqlite`, `snowflake` or `bigquery` (see [supported databases](index.md#supported-databases)) |
+| `url` | yes | A SQLAlchemy URL. `postgresql://` URLs use the psycopg 3 driver and `mysql://` URLs use PyMySQL automatically. |
+
+Example URLs:
+
+```yaml
+sources:
+  warehouse:
+    type: postgres
+    url: ${WAREHOUSE_URL}                    # postgresql://user:password@host:5432/analytics
+  shop:
+    type: mysql
+    url: ${SHOP_URL}                         # mysql://user:password@host:3306/shop
+  local:
+    type: duckdb
+    url: duckdb:///data/warehouse.duckdb     # a DuckDB file; relative to where you run Sentinel
+```
+
+Each driver is an optional extra: `pip install "9gear-sentinel[mysql]"` or `"9gear-sentinel[duckdb]"`. `[all]` installs every driver.
+
+Timestamps without a time zone (MySQL `DATETIME`, for instance) are read as UTC by the `freshness` check.
 
 ## store
 

@@ -50,6 +50,8 @@ jobs:
 
 Because GitHub runners start empty every time, either use `--no-store` or point `store.url` at a Postgres database so history and alert state persist between runs.
 
+To keep the full results as a build artifact, run `sentinel run --format json > sentinel-results.json` and upload that file with `actions/upload-artifact`. The exit code still fails the job when a check fails.
+
 ## Airflow
 
 ```python

@@ -17,11 +17,13 @@ uv pip install -e ".[dev]"
 ruff format . && ruff check . && mypy src && pytest
 ```
 
-Postgres integration tests run when a database is available:
+Postgres and MySQL integration tests run when a database is available (DuckDB tests need no service):
 
 ```bash
-docker compose up -d
-SENTINEL_TEST_PG_URL=postgresql+psycopg://sentinel:sentinel@localhost:5433/analytics pytest
+docker compose --profile mysql up -d
+SENTINEL_TEST_PG_URL=postgresql+psycopg://sentinel:sentinel@localhost:5433/analytics \
+SENTINEL_TEST_MYSQL_URL=mysql+pymysql://sentinel:sentinel@localhost:3307/analytics \
+pytest
 ```
 
 ## Conventions

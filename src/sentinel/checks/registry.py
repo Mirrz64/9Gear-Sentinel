@@ -2,7 +2,16 @@
 
 from __future__ import annotations
 
-from sentinel.checks import accepted_values, custom_sql, freshness, nulls, row_count, unique
+from sentinel.checks import (
+    accepted_values,
+    column_range,
+    custom_sql,
+    foreign_key,
+    freshness,
+    nulls,
+    row_count,
+    unique,
+)
 from sentinel.checks.base import CheckImpl
 
 REGISTRY: dict[str, CheckImpl] = {
@@ -13,6 +22,8 @@ REGISTRY: dict[str, CheckImpl] = {
     "null_rate": nulls.NULL_RATE,
     "unique": unique.IMPL,
     "accepted_values": accepted_values.IMPL,
+    "column_range": column_range.IMPL,
+    "foreign_key": foreign_key.IMPL,
     "custom_sql": custom_sql.IMPL,
 }
 

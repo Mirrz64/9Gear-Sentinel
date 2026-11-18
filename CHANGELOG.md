@@ -2,6 +2,21 @@
 
 All notable changes to this project are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/), and versions follow [Semantic Versioning](https://semver.org/).
 
+## [0.2.0] - Unreleased
+
+### Added
+- MySQL 8 and DuckDB sources, installed with `pip install "9gear-sentinel[mysql]"` or `"9gear-sentinel[duckdb]"` (`[all]` installs every driver). `mysql://` URLs use PyMySQL automatically.
+- `column_range` check: fails when a numeric value is below `min` or above `max`, and lists the most common out-of-range values
+- `foreign_key` check: fails when a column holds values that don't exist in another table's column (including self-references), and lists the most common orphaned values
+- `sentinel run --format json` prints the results as one JSON document on stdout, for scripts and CI. Warnings and the alert count go to stderr.
+
+### Fixed
+- The "driver not installed" hint for Postgres named the old `ninegear-sentinel` package instead of `9gear-sentinel`
+
+### Development
+- CI runs MySQL 8.4 as a service next to Postgres; DuckDB tests run on every OS
+- `docker compose --profile mysql up -d mysql` starts a local MySQL for the integration tests
+
 ## [0.1.1] - 2026-10-31
 
 ### Added
