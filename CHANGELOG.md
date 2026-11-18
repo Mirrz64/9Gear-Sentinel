@@ -2,7 +2,7 @@
 
 All notable changes to this project are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/), and versions follow [Semantic Versioning](https://semver.org/).
 
-## [0.2.0] - Unreleased
+## [0.2.0] - 2026-11-18
 
 ### Added
 - MySQL 8 and DuckDB sources, installed with `pip install "9gear-sentinel[mysql]"` or `"9gear-sentinel[duckdb]"` (`[all]` installs every driver). `mysql://` URLs use PyMySQL automatically.
