@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 import time
 from datetime import datetime
-from enum import Enum
+from enum import StrEnum
 from importlib.resources import files
 from pathlib import Path
 from typing import Annotated
@@ -53,7 +53,7 @@ ConfigOption = Annotated[
 ]
 
 
-class OutputFormat(str, Enum):
+class OutputFormat(StrEnum):
     table = "table"
     json = "json"
 

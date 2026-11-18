@@ -75,6 +75,7 @@ tables:
     )
     report = run_checks(load_config(config_path, environ={}))
     statuses = {r.label: r.status for r in report.results}
+    errors = {r.label: r.message for r in report.results if r.status == "ERROR"}
     assert statuses == {
         "stale": "FAIL",
         "fresh_enough": "PASS",
@@ -84,4 +85,4 @@ tables:
         "unique(order_id)": "FAIL",
         "accepted_values(order_id)": "FAIL",
         "schema_drift": "PASS",
-    }
+    }, errors
