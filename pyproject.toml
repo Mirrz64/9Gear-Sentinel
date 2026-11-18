@@ -10,7 +10,16 @@ readme = "README.md"
 requires-python = ">=3.11"
 license = { text = "Apache-2.0" }
 authors = [{ name = "Miracle Osabuogbe" }]
-keywords = ["data quality", "data observability", "data engineering", "sql", "monitoring"]
+keywords = [
+    "data quality",
+    "data observability",
+    "data engineering",
+    "sql",
+    "monitoring",
+    "postgres",
+    "mysql",
+    "duckdb",
+]
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Environment :: Console",
@@ -36,6 +45,14 @@ dependencies = [
 
 [project.optional-dependencies]
 postgres = ["psycopg[binary]>=3.1"]
+mysql = ["pymysql>=1.1"]
+duckdb = ["duckdb>=1.0", "duckdb-engine>=0.13"]
+all = [
+    "psycopg[binary]>=3.1",
+    "pymysql>=1.1",
+    "duckdb>=1.0",
+    "duckdb-engine>=0.13",
+]
 docs = ["mkdocs-material>=9.5"]
 dev = [
     "pytest>=8",
@@ -43,6 +60,9 @@ dev = [
     "ruff>=0.6",
     "mypy>=1.10",
     "psycopg[binary]>=3.1",
+    "pymysql>=1.1",
+    "duckdb>=1.0",
+    "duckdb-engine>=0.13",
 ]
 
 [project.urls]
@@ -64,7 +84,9 @@ packages = ["src/sentinel"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-q"
-markers = ["integration: needs a running Postgres (set SENTINEL_TEST_PG_URL)"]
+markers = [
+    "integration: needs a running database (SENTINEL_TEST_PG_URL, SENTINEL_TEST_MYSQL_URL)",
+]
 
 [tool.ruff]
 line-length = 100

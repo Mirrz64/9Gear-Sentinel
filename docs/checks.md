@@ -70,6 +70,36 @@ Fails if any non-null value is outside the list. A failure lists up to five of t
     values: [pending, paid, shipped, refunded]
 ```
 
+## column_range
+
+Fails if any non-null value in a numeric column is outside `min` and/or `max` (both inclusive). Set at least one. Nulls are ignored; use `not_null` for those. An empty table passes. A failure lists up to five of the most common out-of-range values, for example `3 values out of range in amount (expected between 0 and 10000; min -5, max 12000); e.g. -5, 11000, 12000`.
+
+```yaml
+- column_range: { column: amount, min: 0, max: 10000 }
+- column_range: { column: quantity, min: 1 }
+```
+
+The column must be numeric. A text or date column is reported as an error.
+
+## foreign_key
+
+Fails when a column holds values that don't exist in a column of another table (orphaned references). Rows where the column is null are ignored.
+
+```yaml
+- foreign_key:
+    column: customer_id
+    ref_table: analytics.customers
+    ref_column: id
+```
+
+| Option | Notes |
+| --- | --- |
+| `column` | The column in this table that holds the reference |
+| `ref_table` | The table it should point to, with a schema prefix if needed |
+| `ref_column` | The column in `ref_table` the values must exist in |
+
+A table can reference itself, for example `employees.manager_id` pointing at `employees.id`. A failure counts the orphaned rows and lists up to five of the most common orphaned values, for example `45 rows with a customer_id not found in customers(id); e.g. 51, 52, 53`. `where` limits which rows of this table are checked, not the referenced table.
+
 ## schema_drift
 
 Fails when a column is added, removed or changes type compared with the stored baseline.

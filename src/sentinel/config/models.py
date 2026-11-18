@@ -22,7 +22,7 @@ class StrictModel(BaseModel):
 
 
 class Source(StrictModel):
-    type: Literal["postgres", "snowflake", "bigquery", "sqlite"]
+    type: Literal["postgres", "mysql", "duckdb", "snowflake", "bigquery", "sqlite"]
     url: str = Field(min_length=1)
 
 
@@ -139,6 +139,28 @@ class AcceptedValuesCheck(CheckBase):
     values: list[str | int | float | bool] = Field(min_length=1)
 
 
+class ColumnRangeCheck(CheckBase):
+    type: Literal["column_range"]
+    column: str
+    min: int | float | None = None
+    max: int | float | None = None
+
+    @model_validator(mode="after")
+    def _bounds(self) -> ColumnRangeCheck:
+        if self.min is None and self.max is None:
+            raise ValueError("set at least one of min or max")
+        if self.min is not None and self.max is not None and self.min > self.max:
+            raise ValueError(f"min ({self.min}) is greater than max ({self.max})")
+        return self
+
+
+class ForeignKeyCheck(CheckBase):
+    type: Literal["foreign_key"]
+    column: str
+    ref_table: str = Field(min_length=1)
+    ref_column: str = Field(min_length=1)
+
+
 class SchemaDriftCheck(CheckBase):
     type: Literal["schema_drift"]
     ignore_columns: list[str] = Field(default_factory=list)
@@ -158,6 +180,8 @@ CheckSpec = Annotated[
     | NullRateCheck
     | UniqueCheck
     | AcceptedValuesCheck
+    | ColumnRangeCheck
+    | ForeignKeyCheck
     | SchemaDriftCheck
     | CustomSqlCheck,
     Field(discriminator="type"),
@@ -171,6 +195,8 @@ CHECK_TYPES: tuple[str, ...] = (
     "null_rate",
     "unique",
     "accepted_values",
+    "column_range",
+    "foreign_key",
     "schema_drift",
     "custom_sql",
 )

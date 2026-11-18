@@ -7,7 +7,7 @@ on:
 
 jobs:
   test:
-    name: Linux, Python ${{ matrix.python-version }} (with Postgres)
+    name: Linux, Python ${{ matrix.python-version }} (with Postgres and MySQL)
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -27,8 +27,23 @@ jobs:
           --health-interval 5s
           --health-timeout 3s
           --health-retries 10
+      mysql:
+        image: mysql:8.4
+        env:
+          MYSQL_ROOT_PASSWORD: sentinel-root
+          MYSQL_DATABASE: analytics
+          MYSQL_USER: sentinel
+          MYSQL_PASSWORD: sentinel
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd "mysqladmin ping -h 127.0.0.1 -usentinel -psentinel --silent"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 20
     env:
       SENTINEL_TEST_PG_URL: postgresql+psycopg://sentinel:sentinel@localhost:5432/analytics
+      SENTINEL_TEST_MYSQL_URL: mysql+pymysql://sentinel:sentinel@localhost:3306/analytics
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v5
@@ -45,7 +60,8 @@ jobs:
         run: pytest --cov=sentinel --cov-report=term-missing
 
   test-other-os:
-    # Service containers only run on Linux, so Postgres integration tests skip here.
+    # Service containers only run on Linux, so Postgres and MySQL integration tests skip here.
+    # DuckDB is in-process, so its tests run on every OS.
     name: ${{ matrix.os }}, Python 3.13
     runs-on: ${{ matrix.os }}
     strategy:

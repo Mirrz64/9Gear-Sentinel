@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import json
 import time
 from datetime import datetime
+from enum import Enum
 from importlib.resources import files
 from pathlib import Path
 from typing import Annotated
@@ -49,6 +51,11 @@ ConfigOption = Annotated[
     Path,
     typer.Option("--config", "-c", help="Path to the config file."),
 ]
+
+
+class OutputFormat(str, Enum):
+    table = "table"
+    json = "json"
 
 
 def _count(number: int, word: str) -> str:
@@ -205,6 +212,14 @@ def run(
     dry_run: Annotated[
         bool, typer.Option("--dry-run", help="Print the SQL each check would run, then stop.")
     ] = False,
+    output_format: Annotated[
+        OutputFormat,
+        typer.Option(
+            "--format",
+            "-f",
+            help="'table' for people, 'json' for scripts and CI (JSON goes to stdout alone).",
+        ),
+    ] = OutputFormat.table,
 ) -> None:
     """Run checks, print the results and exit 0 (ok), 1 (failures) or 2 (setup problem)."""
     cfg = _load_or_exit(config, require_env=not dry_run)
@@ -225,7 +240,13 @@ def run(
             console.print(f"{preview.sql};\n", markup=False, highlight=False)
         return
 
-    report = _execute(cfg, selection, no_store=no_store, no_alerts=no_alerts)
+    report = _execute(
+        cfg,
+        selection,
+        no_store=no_store,
+        no_alerts=no_alerts,
+        as_json=output_format is OutputFormat.json,
+    )
     if report is None:
         err_console.print("no checks matched the filters", markup=False, style="yellow")
         raise typer.Exit(EXIT_CONFIG_PROBLEM)
@@ -307,8 +328,13 @@ def _execute(
     *,
     no_store: bool,
     no_alerts: bool,
+    as_json: bool = False,
 ) -> RunReport | None:
-    """One full run: checks, printed results, alerts and storage. None if nothing matched."""
+    """One full run: checks, printed results, alerts and storage. None if nothing matched.
+
+    With ``as_json`` the results go to stdout as one JSON document and everything
+    else (warnings, the alert count) goes to stderr, so the output stays parseable.
+    """
     store: ResultStore | None = None
     if not no_store:
         try:
@@ -325,9 +351,12 @@ def _execute(
         )
         if not report.results:
             return None
-        _print_report(report)
+        if as_json:
+            typer.echo(report_to_json(report))
+        else:
+            _print_report(report)
         if not no_alerts:
-            _alert(cfg, report, store)
+            _alert(cfg, report, store, to_stderr=as_json)
         if store:
             try:
                 store.save(report)
@@ -483,7 +512,9 @@ def test_alert(config: ConfigOption = Path("sentinel.yml")) -> None:
     )
 
 
-def _alert(cfg: SentinelConfig, report: RunReport, store: ResultStore | None) -> None:
+def _alert(
+    cfg: SentinelConfig, report: RunReport, store: ResultStore | None, *, to_stderr: bool = False
+) -> None:
     """Send alerts for state changes since the last stored run."""
     if not channels(cfg.alerts):
         return
@@ -503,7 +534,8 @@ def _alert(cfg: SentinelConfig, report: RunReport, store: ResultStore | None) ->
     for failure in failures:
         _warn(failure)
     if not failures:
-        console.print(f"alerts: {len(events)} sent", markup=False, highlight=False, style="dim")
+        target = err_console if to_stderr else console
+        target.print(f"alerts: {len(events)} sent", markup=False, highlight=False, style="dim")
 
 
 def _warn(message: str) -> None:
@@ -526,6 +558,36 @@ def _print_history(rows: list[HistoryRow]) -> None:
             Text(row.message),
         )
     console.print(grid)
+
+
+def report_to_json(report: RunReport) -> str:
+    """The run as a JSON document: totals first, then one entry per check."""
+    payload = {
+        "run_id": report.run_id,
+        "started_at": report.started_at.isoformat(),
+        "finished_at": report.finished_at.isoformat() if report.finished_at else None,
+        "status": report.status,
+        "exit_code": report.exit_code,
+        "counts": {
+            status.lower(): report.count(status)
+            for status in ("PASS", "FAIL", "WARN", "ERROR", "SKIP")
+        },
+        "results": [
+            {
+                "source": result.source,
+                "table": result.table,
+                "check": result.label,
+                "type": result.check_type,
+                "severity": result.severity,
+                "status": result.status,
+                "observed": result.observed,
+                "message": result.message,
+                "duration_ms": result.duration_ms,
+            }
+            for result in report.results
+        ],
+    }
+    return json.dumps(payload, indent=2, default=str)
 
 
 def _print_report(report: RunReport) -> None:

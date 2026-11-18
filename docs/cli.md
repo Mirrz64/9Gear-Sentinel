@@ -26,6 +26,15 @@ Every command takes `--config` / `-c` (default `sentinel.yml`). Run `sentinel CO
 | `--no-store` | Don't save results |
 | `--no-alerts` | Don't send alerts |
 | `--dry-run` | Print the SQL each check would run, then stop |
+| `--format`, `-f` | `table` (default) for people, or `json` for scripts and CI |
+
+With `--format json`, stdout holds a single JSON document and nothing else (warnings and the alert count go to stderr), so it can be piped straight into `jq`:
+
+```bash
+sentinel run --format json --no-store | jq '.results[] | select(.status == "FAIL") | .message'
+```
+
+The document has `status`, `exit_code`, `counts` (pass, fail, warn, error, skip) and a `results` list. Each result has `source`, `table`, `check`, `type`, `severity`, `status`, `observed`, `message` and `duration_ms`. Exit codes are the same as for the table format.
 
 ## sentinel history
 

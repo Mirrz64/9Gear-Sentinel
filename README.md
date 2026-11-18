@@ -22,7 +22,7 @@ Sentinel catches stale tables, sudden row-count drops, null spikes, duplicate ke
 - **Ten minutes to the first alert.** `pip install`, one YAML file, done. No server, no UI to host.
 - **Alerts that don't nag.** Slack or email once when a check breaks and once when it recovers, not every hour while it stays broken.
 - **It remembers.** Every run is stored, so checks can catch a 40% overnight drop in rows, and you can see each check's recent trend.
-- **Fits your pipeline.** Clear exit codes for CI and Airflow, a built-in scheduler, and a shareable HTML report.
+- **Fits your pipeline.** Clear exit codes and `--format json` for CI and Airflow, a built-in scheduler, and a shareable HTML report.
 - **Plain SQL you can read.** `--dry-run` shows exactly what will be sent to your database.
 
 ## Quickstart
@@ -70,6 +70,8 @@ sentinel run -c examples/sentinel.yml
 | `null_rate` | The share of nulls is above `max_pct` |
 | `unique` | Any key value appears more than once |
 | `accepted_values` | A value outside the list appears |
+| `column_range` | A numeric value is below `min` or above `max` |
+| `foreign_key` | A value has no match in another table's column |
 | `schema_drift` | A column is added, removed or retyped since the baseline |
 | `custom_sql` | Your query returns any rows |
 
@@ -85,7 +87,13 @@ Full docs: **[mirrz64.github.io/9Gear-Sentinel](https://mirrz64.github.io/9Gear-
 
 ## Supported databases
 
-Postgres and SQLite are supported and tested. Snowflake and BigQuery are planned for v0.2.
+Postgres, MySQL 8, DuckDB and SQLite are supported and tested:
+
+```bash
+pip install "9gear-sentinel[postgres]"   # or [mysql], [duckdb], or [all]
+```
+
+Snowflake and BigQuery are planned for a later release.
 
 ## Contributing
 

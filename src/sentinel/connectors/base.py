@@ -9,10 +9,24 @@ from sqlalchemy.sql.expression import TableClause
 from sentinel.config.models import Source
 
 _INSTALL_HINTS = {
-    "postgres": 'pip install "ninegear-sentinel[postgres]"',
+    "postgres": 'pip install "9gear-sentinel[postgres]"',
+    "mysql": 'pip install "9gear-sentinel[mysql]"',
+    "duckdb": 'pip install "9gear-sentinel[duckdb]"',
     "snowflake": "Snowflake support arrives in a later release",
     "bigquery": "BigQuery support arrives in a later release",
     "sqlite": "SQLite support is built into Python",
+}
+
+# Plain URL schemes people paste in, and the driver-specific scheme Sentinel installs.
+_DRIVER_SCHEMES = {
+    "postgres": (
+        ("postgresql://", "postgresql+psycopg://"),
+        ("postgres://", "postgresql+psycopg://"),
+    ),
+    "mysql": (
+        ("mysql://", "mysql+pymysql://"),
+        ("mariadb://", "mysql+pymysql://"),
+    ),
 }
 
 
@@ -21,12 +35,15 @@ class ConnectorError(Exception):
 
 
 def normalise_url(source: Source) -> str:
-    """Point plain postgres:// URLs at the psycopg 3 driver Sentinel installs."""
+    """Point plain postgres:// and mysql:// URLs at the drivers Sentinel installs.
+
+    URLs that already name a driver (``postgresql+psycopg://``, ``mysql+pymysql://``)
+    are left alone.
+    """
     url = source.url
-    if source.type == "postgres":
-        for prefix in ("postgresql://", "postgres://"):
-            if url.startswith(prefix):
-                return "postgresql+psycopg://" + url.removeprefix(prefix)
+    for prefix, replacement in _DRIVER_SCHEMES.get(source.type, ()):
+        if url.startswith(prefix):
+            return replacement + url.removeprefix(prefix)
     return url
 
 

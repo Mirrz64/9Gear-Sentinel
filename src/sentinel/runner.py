@@ -31,7 +31,16 @@ EXIT_SETUP_PROBLEM = 2
 
 # Fields that define *what* a check measures. Thresholds are left out on purpose,
 # so tightening a limit keeps the check's history and baseline.
-_IDENTITY_FIELDS = ("type", "column", "columns", "where", "name", "sql")
+_IDENTITY_FIELDS = (
+    "type",
+    "column",
+    "columns",
+    "where",
+    "name",
+    "sql",
+    "ref_table",
+    "ref_column",
+)
 
 
 def status_for(outcome: str, severity: str) -> str:
